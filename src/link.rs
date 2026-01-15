@@ -1,7 +1,6 @@
 use crate::note::Note;
-use regex::Regex;
+use pulldown_cmark::{Event, Parser};
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
 
 #[derive(Debug, Clone)]
 pub struct LinkGraph {
@@ -112,19 +111,59 @@ impl LinkGraph {
     }
 }
 
-/// Get the wiki link regex pattern (cached)
-fn wiki_link_regex() -> &'static Regex {
-    static REGEX: OnceLock<Regex> = OnceLock::new();
-    REGEX.get_or_init(|| Regex::new(r"\[\[([^\]]+)\]\]").unwrap())
+/// Extract wiki-style links from markdown content
+///
+/// Parses markdown using pulldown-cmark and extracts [[wiki link]] patterns
+/// from text events. Wiki links are not standard markdown, so they appear
+/// as plain text in the event stream.
+pub fn extract_wiki_links(content: &str) -> Vec<String> {
+    let parser = Parser::new(content);
+    let mut links = Vec::new();
+    let mut accumulated_text = String::new();
+
+    for event in parser {
+        match event {
+            Event::Text(text) => {
+                // Accumulate text to handle wiki links that might be split across events
+                accumulated_text.push_str(text.as_ref());
+            }
+            Event::Code(text) => {
+                // Also check code spans for wiki links
+                accumulated_text.push_str(text.as_ref());
+            }
+            // When we hit a non-text event, process accumulated text and reset
+            _ => {
+                if !accumulated_text.is_empty() {
+                    extract_wiki_links_from_text(&accumulated_text, &mut links);
+                    accumulated_text.clear();
+                }
+            }
+        }
+    }
+
+    // Process any remaining accumulated text
+    if !accumulated_text.is_empty() {
+        extract_wiki_links_from_text(&accumulated_text, &mut links);
+    }
+
+    links
 }
 
-/// Extract wiki-style links from markdown content
-pub fn extract_wiki_links(content: &str) -> Vec<String> {
-    let regex = wiki_link_regex();
-    regex
-        .captures_iter(content)
-        .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-        .collect()
+/// Helper function to extract wiki links from a text string
+fn extract_wiki_links_from_text(text: &str, links: &mut Vec<String>) {
+    let mut start = 0;
+
+    while let Some(begin) = text[start..].find("[[") {
+        let begin = start + begin;
+        if let Some(end) = text[begin + 2..].find("]]") {
+            let end = begin + 2 + end;
+            let link_text = &text[begin + 2..end];
+            links.push(link_text.to_string());
+            start = end + 2;
+        } else {
+            break;
+        }
+    }
 }
 
 #[cfg(test)]

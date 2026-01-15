@@ -12,4 +12,3 @@ pulldown-cmark = "0.12"
 walkdir = "2.5"
 chrono = { version = "0.4", features = ["serde"] }
 anyhow = "1.0"
-regex = "1.11"
