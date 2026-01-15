@@ -1,3 +1,4 @@
+pub mod doctor;
 pub mod edit;
 pub mod init;
 pub mod new;

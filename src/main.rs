@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod link;
 mod note;
 mod repository;
 mod task;
@@ -133,8 +134,7 @@ fn main() -> Result<()> {
             commands::init::run(notes_dir)?;
         }
         Commands::Doctor => {
-            println!("Running doctor checks");
-            // TODO: Implement doctor
+            commands::doctor::run(cli.config)?;
         }
         Commands::Note(note_cmd) => match note_cmd {
             NoteCommands::List { tags } => {
@@ -144,12 +144,10 @@ fn main() -> Result<()> {
                 commands::note::show(cli.config, &title)?;
             }
             NoteCommands::Links { title } => {
-                println!("Showing links for: {}", title);
-                // TODO: Implement note links
+                commands::note::links(cli.config, &title)?;
             }
             NoteCommands::Graph => {
-                println!("Showing link graph");
-                // TODO: Implement note graph
+                commands::note::graph(cli.config)?;
             }
         },
         Commands::Task(task_cmd) => match task_cmd {
