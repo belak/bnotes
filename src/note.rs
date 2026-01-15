@@ -102,7 +102,7 @@ impl Note {
 
         for event in parser {
             match event {
-                Event::Start(Tag::Heading { level, .. }) if level == pulldown_cmark::HeadingLevel::H1 => {
+                Event::Start(Tag::Heading { level: pulldown_cmark::HeadingLevel::H1, .. }) => {
                     in_h1 = true;
                 }
                 Event::End(TagEnd::Heading(pulldown_cmark::HeadingLevel::H1)) => {
@@ -121,14 +121,6 @@ impl Note {
         None
     }
 
-    /// Get filename without extension
-    pub fn filename_without_ext(&self) -> String {
-        self.path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown")
-            .to_string()
-    }
 }
 
 #[cfg(test)]

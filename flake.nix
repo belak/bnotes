@@ -54,6 +54,7 @@
           devShells.default = pkgs.mkShell {
             packages = [
               pkgs.cargo
+              pkgs.clippy
               pkgs.rustc
               pkgs.protobuf
               pkgs.rust-analyzer

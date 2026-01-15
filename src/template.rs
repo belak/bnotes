@@ -34,11 +34,9 @@ pub fn list_templates(template_dir: &Path) -> Result<Vec<String>> {
 
         if path.is_file()
             && path.extension().and_then(|s| s.to_str()) == Some("md")
-        {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
                 templates.push(stem.to_string());
             }
-        }
     }
 
     templates.sort();

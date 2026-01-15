@@ -34,8 +34,6 @@ pub fn run(config_path: Option<PathBuf>, title: Option<String>, template_name: O
         .map(|c| {
             if c.is_alphanumeric() {
                 c
-            } else if c.is_whitespace() {
-                '-'
             } else {
                 '-'
             }

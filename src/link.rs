@@ -36,7 +36,7 @@ impl LinkGraph {
             graph
                 .outbound
                 .entry(note_title.clone())
-                .or_insert_with(HashSet::new);
+                .or_default();
 
             for link_text in links {
                 let link_lower = link_text.to_lowercase();
@@ -47,14 +47,14 @@ impl LinkGraph {
                     graph
                         .outbound
                         .entry(note_title.clone())
-                        .or_insert_with(HashSet::new)
+                        .or_default()
                         .insert(link_text.clone());
 
                     // Add to inbound links for the target
                     graph
                         .inbound
                         .entry(link_text)
-                        .or_insert_with(HashSet::new)
+                        .or_default()
                         .insert(note_title.clone());
                 }
             }

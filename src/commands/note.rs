@@ -93,8 +93,8 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
 
     // Show outbound links (what this note links to)
     let outbound = graph.outbound.get(&note.title);
-    if let Some(links) = outbound {
-        if !links.is_empty() {
+    if let Some(links) = outbound
+        && !links.is_empty() {
             println!("Outbound links ({}):", links.len());
             let mut sorted_links: Vec<_> = links.iter().collect();
             sorted_links.sort();
@@ -103,12 +103,11 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
             }
             println!();
         }
-    }
 
     // Show inbound links (what links to this note)
     let inbound = graph.inbound.get(&note.title);
-    if let Some(links) = inbound {
-        if !links.is_empty() {
+    if let Some(links) = inbound
+        && !links.is_empty() {
             println!("Inbound links ({}):", links.len());
             let mut sorted_links: Vec<_> = links.iter().collect();
             sorted_links.sort();
@@ -117,7 +116,6 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
             }
             println!();
         }
-    }
 
     // If no links at all
     if (outbound.is_none() || outbound.unwrap().is_empty())
@@ -178,15 +176,14 @@ pub fn graph(config_path: Option<PathBuf>) -> Result<()> {
 
         println!("• {} (→{} ←{})", note, out_count, in_count);
 
-        if let Some(links) = outbound {
-            if !links.is_empty() {
+        if let Some(links) = outbound
+            && !links.is_empty() {
                 let mut sorted_links: Vec<_> = links.iter().collect();
                 sorted_links.sort();
                 for link in sorted_links {
                     println!("  → {}", link);
                 }
             }
-        }
     }
 
     println!("\nTotal: {} connected note{}",

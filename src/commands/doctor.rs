@@ -74,7 +74,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
     for note in &notes {
         title_counts
             .entry(note.title.to_lowercase())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(note.path.display().to_string());
     }
 

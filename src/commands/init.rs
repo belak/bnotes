@@ -2,7 +2,7 @@ use crate::config::Config;
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub fn run(notes_dir: Option<PathBuf>) -> Result<()> {
     let config_path = Config::default_config_path()?;

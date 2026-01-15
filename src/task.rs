@@ -9,7 +9,6 @@ pub struct Task {
     pub index: usize, // 1-based index within the note
     pub completed: bool,
     pub text: String,
-    pub context: String, // Surrounding lines for context
 }
 
 impl Task {
@@ -42,16 +41,12 @@ impl Task {
                 Event::End(pulldown_cmark::TagEnd::Item) if in_task_item => {
                     task_index += 1;
 
-                    // Extract context (simplified - just use the task text)
-                    let context = task_text.trim().to_string();
-
                     tasks.push(Task {
                         note_path: note.path.clone(),
                         note_title: note.title.clone(),
                         index: task_index,
                         completed: is_checked,
-                        text: context.clone(),
-                        context,
+                        text: task_text.trim().to_string(),
                     });
 
                     in_task_item = false;
@@ -115,10 +110,10 @@ More text.
 
         assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[0].text, "First task");
-        assert_eq!(tasks[0].completed, false);
+        assert!(!tasks[0].completed);
         assert_eq!(tasks[1].text, "Completed task");
-        assert_eq!(tasks[1].completed, true);
+        assert!(tasks[1].completed);
         assert_eq!(tasks[2].text, "Another task");
-        assert_eq!(tasks[2].completed, false);
+        assert!(!tasks[2].completed);
     }
 }
