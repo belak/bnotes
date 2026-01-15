@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod git;
 mod link;
 mod note;
 mod repository;
@@ -59,6 +60,16 @@ enum Commands {
 
     /// Check for issues in the note collection
     Doctor,
+
+    /// Sync notes with git remote (commit, pull, push)
+    Sync {
+        /// Custom commit message
+        #[arg(long, short)]
+        message: Option<String>,
+    },
+
+    /// Pull changes from git remote
+    Pull,
 
     /// Note management commands
     #[command(subcommand)]
@@ -135,6 +146,12 @@ fn main() -> Result<()> {
         }
         Commands::Doctor => {
             commands::doctor::run(cli.config)?;
+        }
+        Commands::Sync { message } => {
+            commands::sync::sync(cli.config, message)?;
+        }
+        Commands::Pull => {
+            commands::sync::pull(cli.config)?;
         }
         Commands::Note(note_cmd) => match note_cmd {
             NoteCommands::List { tags } => {
