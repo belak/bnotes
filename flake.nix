@@ -58,15 +58,12 @@
               pkgs.rustc
               pkgs.protobuf
               pkgs.rust-analyzer
-              pkgs.sqlx-cli
-              pkgs.sqlite
 
               config.packages.beads
             ];
 
             shellHook = ''
               export RUST_BACKTRACE=1
-              export DATABASE_URL="sqlite://$(git rev-parse --show-toplevel)/bnotes.db";
             '';
           };
 
