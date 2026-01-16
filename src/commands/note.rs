@@ -1,17 +1,15 @@
-use crate::config::Config;
 use crate::link::LinkGraph;
-use crate::repository::Repository;
+use crate::util::{pluralize, CommandContext};
 use anyhow::Result;
 use std::path::PathBuf;
 
 pub fn list(config_path: Option<PathBuf>, tags: &[String]) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
+    let ctx = CommandContext::load(config_path)?;
 
     let notes = if tags.is_empty() {
-        repo.discover_notes()?
+        ctx.repo.discover_notes()?
     } else {
-        repo.filter_by_tags(tags)?
+        ctx.repo.filter_by_tags(tags)?
     };
 
     if notes.is_empty() {
@@ -39,16 +37,14 @@ pub fn list(config_path: Option<PathBuf>, tags: &[String]) -> Result<()> {
         println!("{}{}", note.title, tag_str);
     }
 
-    println!("\nTotal: {} note{}", count, if count == 1 { "" } else { "s" });
+    println!("\nTotal: {} {}", count, pluralize(count, "note", "notes"));
 
     Ok(())
 }
 
 pub fn show(config_path: Option<PathBuf>, title: &str) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
-
-    let matches = repo.find_by_title(title)?;
+    let ctx = CommandContext::load(config_path)?;
+    let matches = ctx.repo.find_by_title(title)?;
 
     match matches.len() {
         0 => anyhow::bail!("Note not found: {}", title),
@@ -68,10 +64,8 @@ pub fn show(config_path: Option<PathBuf>, title: &str) -> Result<()> {
 }
 
 pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
-
-    let matches = repo.find_by_title(title)?;
+    let ctx = CommandContext::load(config_path)?;
+    let matches = ctx.repo.find_by_title(title)?;
 
     let note = match matches.len() {
         0 => anyhow::bail!("Note not found: {}", title),
@@ -86,7 +80,7 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
     };
 
     // Build link graph
-    let notes = repo.discover_notes()?;
+    let notes = ctx.repo.discover_notes()?;
     let graph = LinkGraph::build(&notes);
 
     println!("Links for: {}\n", note.title);
@@ -128,10 +122,8 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
 }
 
 pub fn graph(config_path: Option<PathBuf>) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
-
-    let notes = repo.discover_notes()?;
+    let ctx = CommandContext::load(config_path)?;
+    let notes = ctx.repo.discover_notes()?;
 
     if notes.is_empty() {
         println!("No notes found.");
@@ -186,9 +178,9 @@ pub fn graph(config_path: Option<PathBuf>) -> Result<()> {
             }
     }
 
-    println!("\nTotal: {} connected note{}",
+    println!("\nTotal: {} connected {}",
         connected_notes.len(),
-        if connected_notes.len() == 1 { "" } else { "s" }
+        pluralize(connected_notes.len(), "note", "notes")
     );
 
     Ok(())

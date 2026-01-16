@@ -1,5 +1,5 @@
-use crate::config::Config;
 use crate::template;
+use crate::util::CommandContext;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use std::fs;
@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 pub fn run(config_path: Option<PathBuf>, title: Option<String>, template_name: Option<String>) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
+    let ctx = CommandContext::load(config_path)?;
 
     // Get title
     let title = if let Some(t) = title {
@@ -47,7 +47,7 @@ pub fn run(config_path: Option<PathBuf>, title: Option<String>, template_name: O
         .collect::<Vec<_>>()
         .join("-");
 
-    let note_path = config.notes_dir.join(format!("{}.md", filename));
+    let note_path = ctx.config.notes_dir.join(format!("{}.md", filename));
 
     // Check if file already exists
     if note_path.exists() {
@@ -56,7 +56,7 @@ pub fn run(config_path: Option<PathBuf>, title: Option<String>, template_name: O
 
     // Generate content
     let content = if let Some(template) = template_name {
-        let template_dir = config.template_dir_path();
+        let template_dir = ctx.config.template_dir_path();
         let template_path = template_dir.join(format!("{}.md", template));
 
         if !template_path.exists() {
@@ -93,8 +93,8 @@ updated: {}
     };
 
     // Ensure notes directory exists
-    fs::create_dir_all(&config.notes_dir)
-        .with_context(|| format!("Failed to create notes directory: {}", config.notes_dir.display()))?;
+    fs::create_dir_all(&ctx.config.notes_dir)
+        .with_context(|| format!("Failed to create notes directory: {}", ctx.config.notes_dir.display()))?;
 
     // Write note
     fs::write(&note_path, content)

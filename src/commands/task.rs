@@ -1,18 +1,16 @@
-use crate::config::Config;
-use crate::repository::Repository;
 use crate::task::{self, Task};
+use crate::util::{pluralize, CommandContext};
 use anyhow::Result;
 use std::path::PathBuf;
 
 pub fn list(config_path: Option<PathBuf>, tags: &[String], status: Option<String>) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
+    let ctx = CommandContext::load(config_path)?;
 
     // Get notes, optionally filtered by tags
     let notes = if tags.is_empty() {
-        repo.discover_notes()?
+        ctx.repo.discover_notes()?
     } else {
-        repo.filter_by_tags(tags)?
+        ctx.repo.filter_by_tags(tags)?
     };
 
     // Extract tasks from all notes
@@ -52,14 +50,13 @@ pub fn list(config_path: Option<PathBuf>, tags: &[String], status: Option<String
         );
     }
 
-    println!("\nTotal: {} task{}", tasks.len(), if tasks.len() == 1 { "" } else { "s" });
+    println!("\nTotal: {} {}", tasks.len(), pluralize(tasks.len(), "task", "tasks"));
 
     Ok(())
 }
 
 pub fn show(config_path: Option<PathBuf>, task_id: &str) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
+    let ctx = CommandContext::load(config_path)?;
 
     // Parse task ID (format: "filename#index")
     let parts: Vec<&str> = task_id.split('#').collect();
@@ -72,7 +69,7 @@ pub fn show(config_path: Option<PathBuf>, task_id: &str) -> Result<()> {
         .map_err(|_| anyhow::anyhow!("Invalid task index: {}", parts[1]))?;
 
     // Find the note
-    let notes = repo.discover_notes()?;
+    let notes = ctx.repo.discover_notes()?;
     let note = notes.iter()
         .find(|n| n.path.file_stem()
             .and_then(|s| s.to_str())

@@ -1,13 +1,10 @@
-use crate::config::Config;
-use crate::repository::Repository;
+use crate::util::{pluralize, CommandContext};
 use anyhow::Result;
 use std::path::PathBuf;
 
 pub fn run(config_path: Option<PathBuf>, query: &str) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
-
-    let matches = repo.search(query)?;
+    let ctx = CommandContext::load(config_path)?;
+    let matches = ctx.repo.search(query)?;
 
     if matches.is_empty() {
         println!("No notes found matching: {}", query);
@@ -35,7 +32,7 @@ pub fn run(config_path: Option<PathBuf>, query: &str) -> Result<()> {
         println!();
     }
 
-    println!("Found {} match{}", matches.len(), if matches.len() == 1 { "" } else { "es" });
+    println!("Found {} {}", matches.len(), pluralize(matches.len(), "match", "matches"));
 
     Ok(())
 }

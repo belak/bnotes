@@ -6,6 +6,7 @@ mod note;
 mod repository;
 mod task;
 mod template;
+mod util;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

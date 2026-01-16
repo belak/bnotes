@@ -1,15 +1,12 @@
-use crate::config::Config;
 use crate::link::LinkGraph;
-use crate::repository::Repository;
+use crate::util::{pluralize, CommandContext};
 use anyhow::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub fn run(config_path: Option<PathBuf>) -> Result<()> {
-    let config = Config::resolve_and_load(config_path.as_deref())?;
-    let repo = Repository::new(&config.notes_dir);
-
-    let notes = repo.discover_notes()?;
+    let ctx = CommandContext::load(config_path)?;
+    let notes = ctx.repo.discover_notes()?;
 
     if notes.is_empty() {
         println!("No notes found to check.");
@@ -126,9 +123,9 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
     if issues_found == 0 {
         println!("All checks passed! Your notes are healthy.");
     } else {
-        println!("Found {} issue{} that may need attention.",
+        println!("Found {} {} that may need attention.",
             issues_found,
-            if issues_found == 1 { "" } else { "s" }
+            pluralize(issues_found, "issue", "issues")
         );
     }
 
