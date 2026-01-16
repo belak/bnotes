@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use pulldown_cmark::{Event, Parser, Tag, TagEnd};
+use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -66,32 +66,64 @@ impl Note {
         })
     }
 
-    /// Extract frontmatter and body from content
+    /// Extract frontmatter and body from content using pulldown-cmark's built-in parsing
     fn extract_frontmatter(content: &str) -> Result<(Option<Frontmatter>, String)> {
-        let trimmed = content.trim_start();
+        let mut options = Options::empty();
+        options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
-        if !trimmed.starts_with("---") {
-            return Ok((None, content.to_string()));
+        let parser = Parser::new_ext(content, options);
+        let mut in_metadata = false;
+        let mut yaml_content = String::new();
+        let mut found_metadata = false;
+
+        for event in parser {
+            match event {
+                Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
+                    in_metadata = true;
+                    found_metadata = true;
+                }
+                Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
+                    in_metadata = false;
+                }
+                Event::Text(text) if in_metadata => {
+                    yaml_content.push_str(&text);
+                }
+                _ => {}
+            }
         }
 
-        // Find the ending ---
-        let rest = &trimmed[3..];
-        if let Some(end_pos) = rest.find("\n---") {
-            let yaml_content = &rest[..end_pos];
-            let body = &rest[end_pos + 4..]; // Skip the closing ---
-
-            match serde_yaml::from_str::<Frontmatter>(yaml_content) {
-                Ok(fm) => Ok((Some(fm), body.to_string())),
+        let frontmatter = if found_metadata && !yaml_content.is_empty() {
+            match serde_yaml::from_str::<Frontmatter>(&yaml_content) {
+                Ok(fm) => Some(fm),
                 Err(e) => {
                     // Log warning but continue
                     eprintln!("Warning: Failed to parse frontmatter: {}", e);
-                    Ok((None, content.to_string()))
+                    None
                 }
             }
         } else {
-            // No closing ---, treat as regular content
-            Ok((None, content.to_string()))
-        }
+            None
+        };
+
+        // Extract body by removing the frontmatter block from the original content
+        let body = if found_metadata {
+            // Find the end of the frontmatter block in the original content
+            if let Some(end_pos) = content.find("\n---\n").or_else(|| content.find("\n---").map(|pos| {
+                if content.len() > pos + 4 {
+                    pos
+                } else {
+                    pos
+                }
+            })) {
+                content[end_pos + 4..].trim_start().to_string()
+            } else {
+                content.to_string()
+            }
+        } else {
+            content.to_string()
+        };
+
+        Ok((frontmatter, body))
     }
 
     /// Extract the first H1 heading from markdown
