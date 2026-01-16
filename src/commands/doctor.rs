@@ -25,7 +25,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
     let broken_links = graph.broken_links(&notes);
 
     if !broken_links.is_empty() {
-        println!("❌ Broken wiki links:");
+        println!("ERROR: Broken wiki links:");
         for (note_title, broken) in &broken_links {
             println!("  {} has broken links:", note_title);
             for link in broken {
@@ -43,7 +43,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
         .collect();
 
     if !notes_without_tags.is_empty() {
-        println!("⚠️  Notes without tags:");
+        println!("WARNING: Notes without tags:");
         for note in &notes_without_tags {
             println!("  - {}", note.title);
         }
@@ -61,7 +61,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
         .collect();
 
     if !notes_without_frontmatter.is_empty() {
-        println!("⚠️  Notes missing frontmatter:");
+        println!("WARNING: Notes missing frontmatter:");
         for note in &notes_without_frontmatter {
             println!("  - {}", note.title);
         }
@@ -84,7 +84,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
         .collect();
 
     if !duplicate_titles.is_empty() {
-        println!("❌ Multiple notes with the same title:");
+        println!("ERROR: Multiple notes with the same title:");
         for (title, paths) in duplicate_titles {
             println!("  Title: {}", title);
             for path in paths {
@@ -114,7 +114,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
         .collect();
 
     if !truly_orphaned.is_empty() {
-        println!("⚠️  Orphaned notes (no links, no tags):");
+        println!("WARNING: Orphaned notes (no links, no tags):");
         for title in truly_orphaned {
             println!("  - {}", title);
         }
@@ -124,7 +124,7 @@ pub fn run(config_path: Option<PathBuf>) -> Result<()> {
 
     // Summary
     if issues_found == 0 {
-        println!("✅ All checks passed! Your notes are healthy.");
+        println!("All checks passed! Your notes are healthy.");
     } else {
         println!("Found {} issue{} that may need attention.",
             issues_found,

@@ -57,13 +57,13 @@ pub fn run(notes_dir: Option<PathBuf>) -> Result<()> {
     fs::write(&config_path, config_content)
         .with_context(|| format!("Failed to write config file: {}", config_path.display()))?;
 
-    println!("✓ Config created at: {}", config_path.display());
+    println!("Config created at: {}", config_path.display());
 
     // Create notes directory
     fs::create_dir_all(&notes_dir)
         .with_context(|| format!("Failed to create notes directory: {}", notes_dir.display()))?;
 
-    println!("✓ Notes directory created at: {}", notes_dir.display());
+    println!("Notes directory created at: {}", notes_dir.display());
 
     // Create templates directory
     let templates_dir = notes_dir.join(".templates");
@@ -89,8 +89,8 @@ updated: {{datetime}}
     fs::write(&example_template, template_content)
         .with_context(|| format!("Failed to create example template: {}", example_template.display()))?;
 
-    println!("✓ Template directory created at: {}", templates_dir.display());
-    println!("✓ Example template created: daily.md");
+    println!("Template directory created at: {}", templates_dir.display());
+    println!("Example template created: daily.md");
     println!("\nbnotes is ready! Try:");
     println!("  bnotes new \"My First Note\"");
 

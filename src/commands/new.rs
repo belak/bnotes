@@ -100,7 +100,7 @@ updated: {}
     fs::write(&note_path, content)
         .with_context(|| format!("Failed to write note: {}", note_path.display()))?;
 
-    println!("✓ Created note: {}", note_path.display());
+    println!("Created note: {}", note_path.display());
 
     Ok(())
 }

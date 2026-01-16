@@ -99,7 +99,7 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
             let mut sorted_links: Vec<_> = links.iter().collect();
             sorted_links.sort();
             for link in sorted_links {
-                println!("  → {}", link);
+                println!("  -> {}", link);
             }
             println!();
         }
@@ -112,7 +112,7 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
             let mut sorted_links: Vec<_> = links.iter().collect();
             sorted_links.sort();
             for link in sorted_links {
-                println!("  ← {}", link);
+                println!("  <- {}", link);
             }
             println!();
         }
@@ -174,14 +174,14 @@ pub fn graph(config_path: Option<PathBuf>) -> Result<()> {
         let out_count = outbound.map(|s| s.len()).unwrap_or(0);
         let in_count = inbound.map(|s| s.len()).unwrap_or(0);
 
-        println!("• {} (→{} ←{})", note, out_count, in_count);
+        println!("- {} (->{} <-{})", note, out_count, in_count);
 
         if let Some(links) = outbound
             && !links.is_empty() {
                 let mut sorted_links: Vec<_> = links.iter().collect();
                 sorted_links.sort();
                 for link in sorted_links {
-                    println!("  → {}", link);
+                    println!("  -> {}", link);
                 }
             }
     }
