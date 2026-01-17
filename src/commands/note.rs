@@ -1,16 +1,15 @@
-use crate::link::LinkGraph;
-use crate::util::{pluralize, CommandContext};
+use crate::config::CLIConfig;
+use crate::util::pluralize;
+use bnotes::{BNotes, RealStorage};
 use anyhow::Result;
 use std::path::PathBuf;
 
 pub fn list(config_path: Option<PathBuf>, tags: &[String]) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
 
-    let notes = if tags.is_empty() {
-        ctx.repo.discover_notes()?
-    } else {
-        ctx.repo.filter_by_tags(tags)?
-    };
+    let notes = bnotes.list_notes(tags)?;
 
     if notes.is_empty() {
         if tags.is_empty() {
@@ -43,8 +42,11 @@ pub fn list(config_path: Option<PathBuf>, tags: &[String]) -> Result<()> {
 }
 
 pub fn show(config_path: Option<PathBuf>, title: &str) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
-    let matches = ctx.repo.find_by_title(title)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
+
+    let matches = bnotes.find_note_by_title(title)?;
 
     match matches.len() {
         0 => anyhow::bail!("Note not found: {}", title),
@@ -64,8 +66,11 @@ pub fn show(config_path: Option<PathBuf>, title: &str) -> Result<()> {
 }
 
 pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
-    let matches = ctx.repo.find_by_title(title)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
+
+    let matches = bnotes.find_note_by_title(title)?;
 
     let note = match matches.len() {
         0 => anyhow::bail!("Note not found: {}", title),
@@ -79,42 +84,34 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
         }
     };
 
-    // Build link graph
-    let notes = ctx.repo.discover_notes()?;
-    let graph = LinkGraph::build(&notes);
+    let (outbound, inbound) = bnotes.get_note_links(&note.title)?;
 
     println!("Links for: {}\n", note.title);
 
     // Show outbound links (what this note links to)
-    let outbound = graph.outbound.get(&note.title);
-    if let Some(links) = outbound
-        && !links.is_empty() {
-            println!("Outbound links ({}):", links.len());
-            let mut sorted_links: Vec<_> = links.iter().collect();
-            sorted_links.sort();
-            for link in sorted_links {
-                println!("  -> {}", link);
-            }
-            println!();
+    if !outbound.is_empty() {
+        println!("Outbound links ({}):", outbound.len());
+        let mut sorted_links: Vec<_> = outbound.iter().collect();
+        sorted_links.sort();
+        for link in sorted_links {
+            println!("  -> {}", link);
         }
+        println!();
+    }
 
     // Show inbound links (what links to this note)
-    let inbound = graph.inbound.get(&note.title);
-    if let Some(links) = inbound
-        && !links.is_empty() {
-            println!("Inbound links ({}):", links.len());
-            let mut sorted_links: Vec<_> = links.iter().collect();
-            sorted_links.sort();
-            for link in sorted_links {
-                println!("  <- {}", link);
-            }
-            println!();
+    if !inbound.is_empty() {
+        println!("Inbound links ({}):", inbound.len());
+        let mut sorted_links: Vec<_> = inbound.iter().collect();
+        sorted_links.sort();
+        for link in sorted_links {
+            println!("  <- {}", link);
         }
+        println!();
+    }
 
     // If no links at all
-    if (outbound.is_none() || outbound.unwrap().is_empty())
-        && (inbound.is_none() || inbound.unwrap().is_empty())
-    {
+    if outbound.is_empty() && inbound.is_empty() {
         println!("No links found for this note.");
     }
 
@@ -122,15 +119,18 @@ pub fn links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
 }
 
 pub fn graph(config_path: Option<PathBuf>) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
-    let notes = ctx.repo.discover_notes()?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
+
+    let notes = bnotes.list_notes(&[])?;
 
     if notes.is_empty() {
         println!("No notes found.");
         return Ok(());
     }
 
-    let graph = LinkGraph::build(&notes);
+    let graph = bnotes.get_link_graph()?;
 
     println!("Link Graph ({} notes):\n", notes.len());
 

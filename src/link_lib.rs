@@ -1,4 +1,6 @@
-use crate::note::Note;
+//! Link extraction and graph building for wiki-style links
+
+use crate::repository_lib::Note;
 use pulldown_cmark::{Event, Parser};
 use std::collections::{HashMap, HashSet};
 
@@ -87,13 +89,13 @@ impl LinkGraph {
     }
 
     /// Find broken links (links to non-existent notes)
-    pub fn broken_links(&self, notes: &[Note]) -> Vec<(String, Vec<String>)> {
+    pub fn broken_links(&self, notes: &[Note]) -> HashMap<String, Vec<String>> {
         let title_set: HashSet<String> = notes
             .iter()
             .map(|n| n.title.to_lowercase())
             .collect();
 
-        let mut broken = Vec::new();
+        let mut broken = HashMap::new();
 
         for note in notes {
             let links = extract_wiki_links(&note.content);
@@ -103,7 +105,7 @@ impl LinkGraph {
                 .collect();
 
             if !broken_in_note.is_empty() {
-                broken.push((note.title.clone(), broken_in_note));
+                broken.insert(note.title.clone(), broken_in_note);
             }
         }
 

@@ -1,12 +1,12 @@
+use crate::config::CLIConfig;
 use crate::git::GitRepo;
-use crate::util::CommandContext;
 use anyhow::Result;
 use std::path::PathBuf;
 
 /// Sync notes with git remote (commit, pull, push)
 pub fn sync(config_path: Option<PathBuf>, message: Option<String>) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
-    let repo = GitRepo::new(ctx.config.notes_dir)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let repo = GitRepo::new(cli_config.notes_dir)?;
 
     // Verify git repository and remote
     repo.check_is_repo()?;
@@ -57,8 +57,8 @@ pub fn sync(config_path: Option<PathBuf>, message: Option<String>) -> Result<()>
 
 /// Pull changes from git remote
 pub fn pull(config_path: Option<PathBuf>) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
-    let repo = GitRepo::new(ctx.config.notes_dir)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let repo = GitRepo::new(cli_config.notes_dir)?;
 
     // Verify git repository and remote
     repo.check_is_repo()?;

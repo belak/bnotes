@@ -1,6 +1,5 @@
-use crate::periodic::PeriodType;
-use crate::template;
-use crate::util::CommandContext;
+use crate::config::CLIConfig;
+use bnotes::{BNotes, PeriodType, RealStorage};
 use anyhow::{Context, Result};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -19,7 +18,9 @@ pub fn handle_periodic<P: PeriodType>(
     action: PeriodicAction,
     template_override: Option<String>,
 ) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
 
     match action {
         PeriodicAction::Open(date_str) => {
@@ -29,18 +30,18 @@ pub fn handle_periodic<P: PeriodType>(
                 P::current()
             };
 
-            open_period::<P>(&ctx, period, template_override)?;
+            open_period::<P>(&cli_config, &bnotes, period, template_override)?;
         }
         PeriodicAction::List => {
-            list_periods::<P>(&ctx)?;
+            list_periods::<P>(&bnotes)?;
         }
         PeriodicAction::Prev => {
-            let period = P::current().prev();
-            open_period::<P>(&ctx, period, template_override)?;
+            let note_path = bnotes.navigate_periodic::<P>("prev", template_override.as_deref())?;
+            launch_editor(&cli_config, &note_path)?;
         }
         PeriodicAction::Next => {
-            let period = P::current().next();
-            open_period::<P>(&ctx, period, template_override)?;
+            let note_path = bnotes.navigate_periodic::<P>("next", template_override.as_deref())?;
+            launch_editor(&cli_config, &note_path)?;
         }
     }
 
@@ -48,14 +49,16 @@ pub fn handle_periodic<P: PeriodType>(
 }
 
 fn open_period<P: PeriodType>(
-    ctx: &CommandContext,
+    cli_config: &CLIConfig,
+    bnotes: &BNotes,
     period: P,
     template_override: Option<String>,
 ) -> Result<()> {
-    let note_path = ctx.config.notes_dir.join(period.filename());
+    let note_path = PathBuf::from(period.filename());
+    let full_path = cli_config.notes_dir.join(&note_path);
 
     // If note doesn't exist, prompt to create
-    if !note_path.exists() {
+    if !full_path.exists() {
         print!(
             "{} {} doesn't exist. Create it? [Y/n] ",
             match P::template_name() {
@@ -76,96 +79,40 @@ fn open_period<P: PeriodType>(
             return Ok(());
         }
 
-        // Create the note
-        create_period_note(ctx, &period, &note_path, template_override)?;
+        // Create the note using library
+        bnotes.open_periodic(period, template_override.as_deref())?;
     }
 
-    // Open in editor
-    let status = Command::new(&ctx.config.editor)
-        .arg(&note_path)
-        .status()
-        .with_context(|| format!("Failed to open editor: {}", ctx.config.editor))?;
-
-    if !status.success() {
-        anyhow::bail!("Editor exited with status: {}", status);
-    }
-
+    launch_editor(cli_config, &note_path)?;
     Ok(())
 }
 
-fn create_period_note<P: PeriodType>(
-    ctx: &CommandContext,
-    period: &P,
-    note_path: &PathBuf,
-    template_override: Option<String>,
-) -> Result<()> {
-    let template_dir = ctx.config.template_dir_path();
-
-    // Determine which template to use
-    let template_name = if let Some(override_name) = template_override {
-        override_name
-    } else {
-        // Get configured template based on period type
-        match P::template_name() {
-            "daily" => ctx.config.periodic.daily_template.clone(),
-            "weekly" => ctx.config.periodic.weekly_template.clone(),
-            "quarterly" => ctx.config.periodic.quarterly_template.clone(),
-            _ => format!("{}.md", P::template_name()),
-        }
-    };
-
-    let template_path = template_dir.join(&template_name);
-
-    // Generate content
-    let content = if template_path.exists() {
-        template::render(&template_path, &period.identifier())?
-    } else {
-        // Minimal note with just title
-        format!("# {}\n\n", period.identifier())
-    };
-
-    // Ensure notes directory exists
-    std::fs::create_dir_all(&ctx.config.notes_dir)
-        .with_context(|| format!("Failed to create notes directory: {}", ctx.config.notes_dir.display()))?;
-
-    // Write note
-    std::fs::write(note_path, content)
-        .with_context(|| format!("Failed to write note: {}", note_path.display()))?;
-
-    Ok(())
-}
-
-fn list_periods<P: PeriodType>(ctx: &CommandContext) -> Result<()> {
-    let mut periods: Vec<P> = Vec::new();
-
-    // Scan notes directory for matching files
-    for entry in std::fs::read_dir(&ctx.config.notes_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.is_file()
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-        {
-            // Try to parse as this period type
-            if let Ok(period) = P::from_date_str(stem) {
-                // Verify it matches the filename format
-                if period.identifier() == stem {
-                    periods.push(period);
-                }
-            }
-        }
-    }
+fn list_periods<P: PeriodType>(bnotes: &BNotes) -> Result<()> {
+    let periods = bnotes.list_periodic::<P>()?;
 
     if periods.is_empty() {
         println!("No {} notes found.", P::template_name());
         return Ok(());
     }
 
-    // Sort by identifier (which is chronological)
-    periods.sort_by_key(|a| a.identifier());
-
     for period in periods {
         println!("{}", period.display_string());
+    }
+
+    Ok(())
+}
+
+fn launch_editor(cli_config: &CLIConfig, note_path: &PathBuf) -> Result<()> {
+    let full_path = cli_config.notes_dir.join(note_path);
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
+
+    let status = Command::new(&editor)
+        .arg(&full_path)
+        .status()
+        .with_context(|| format!("Failed to open editor: {}", editor))?;
+
+    if !status.success() {
+        anyhow::bail!("Editor exited with status: {}", status);
     }
 
     Ok(())

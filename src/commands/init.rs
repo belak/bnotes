@@ -1,11 +1,11 @@
-use crate::config::Config;
+use crate::config::CLIConfig;
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::{self, Write};
 use std::path::PathBuf;
 
 pub fn run(notes_dir: Option<PathBuf>) -> Result<()> {
-    let config_path = Config::default_config_path()?;
+    let config_path = CLIConfig::default_config_path()?;
 
     // Check if config already exists
     if config_path.exists() {
@@ -46,7 +46,7 @@ pub fn run(notes_dir: Option<PathBuf>) -> Result<()> {
     }
 
     // Create config
-    let config = Config {
+    let config = CLIConfig {
         notes_dir: notes_dir.clone(),
         ..Default::default()
     };
@@ -91,6 +91,30 @@ updated: {{datetime}}
 
     println!("Template directory created at: {}", templates_dir.display());
     println!("Example template created: daily.md");
+
+    // Create library config in notes directory
+    let bnotes_dir = notes_dir.join(".bnotes");
+    fs::create_dir_all(&bnotes_dir)
+        .with_context(|| format!("Failed to create .bnotes directory: {}", bnotes_dir.display()))?;
+
+    let lib_config_path = bnotes_dir.join("config.toml");
+    let lib_config_content = r#"# BNotes Library Configuration
+# This file is stored in your notes directory and can be committed to version control
+
+# Directory for note templates (relative to notes root)
+template_dir = ".templates"
+
+[periodic]
+# Template filenames for periodic notes (in template_dir)
+daily_template = "daily.md"
+weekly_template = "weekly.md"
+quarterly_template = "quarterly.md"
+"#;
+
+    fs::write(&lib_config_path, lib_config_content)
+        .with_context(|| format!("Failed to create library config: {}", lib_config_path.display()))?;
+
+    println!("Library config created at: {}", lib_config_path.display());
     println!("\nbnotes is ready! Try:");
     println!("  bnotes new \"My First Note\"");
 

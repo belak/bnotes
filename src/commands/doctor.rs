@@ -1,131 +1,86 @@
-use crate::link::LinkGraph;
-use crate::util::{pluralize, CommandContext};
+use crate::config::CLIConfig;
+use crate::util::pluralize;
 use anyhow::Result;
-use std::collections::HashMap;
+use bnotes::{BNotes, RealStorage};
 use std::path::PathBuf;
 
 pub fn run(config_path: Option<PathBuf>) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
-    let notes = ctx.repo.discover_notes()?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
+
+    // Get note count for display
+    let notes = bnotes.list_notes(&[])?;
 
     if notes.is_empty() {
         println!("No notes found to check.");
         return Ok(());
     }
 
-    let mut issues_found = 0;
-
     println!("Running health checks on {} notes...\n", notes.len());
 
-    // Check for broken wiki links
-    let graph = LinkGraph::build(&notes);
-    let broken_links = graph.broken_links(&notes);
+    // Run health checks
+    let report = bnotes.check_health()?;
 
-    if !broken_links.is_empty() {
+    // Display broken wiki links
+    if !report.broken_links.is_empty() {
         println!("ERROR: Broken wiki links:");
-        for (note_title, broken) in &broken_links {
+        for (note_title, broken) in &report.broken_links {
             println!("  {} has broken links:", note_title);
             for link in broken {
                 println!("    - [[{}]]", link);
             }
         }
-        issues_found += broken_links.len();
         println!();
     }
 
-    // Check for notes without tags
-    let notes_without_tags: Vec<_> = notes
-        .iter()
-        .filter(|n| n.tags.is_empty())
-        .collect();
-
-    if !notes_without_tags.is_empty() {
+    // Display notes without tags
+    if !report.notes_without_tags.is_empty() {
         println!("WARNING: Notes without tags:");
-        for note in &notes_without_tags {
-            println!("  - {}", note.title);
+        for title in &report.notes_without_tags {
+            println!("  - {}", title);
         }
-        issues_found += notes_without_tags.len();
         println!();
     }
 
-    // Check for notes missing frontmatter
-    let notes_without_frontmatter: Vec<_> = notes
-        .iter()
-        .filter(|n| {
-            // A note is missing frontmatter if it has no tags and no dates
-            n.tags.is_empty() && n.created.is_none() && n.updated.is_none()
-        })
-        .collect();
-
-    if !notes_without_frontmatter.is_empty() {
+    // Display notes missing frontmatter
+    if !report.notes_without_frontmatter.is_empty() {
         println!("WARNING: Notes missing frontmatter:");
-        for note in &notes_without_frontmatter {
-            println!("  - {}", note.title);
+        for title in &report.notes_without_frontmatter {
+            println!("  - {}", title);
         }
-        issues_found += notes_without_frontmatter.len();
         println!();
     }
 
-    // Check for multiple notes with the same title
-    let mut title_counts: HashMap<String, Vec<String>> = HashMap::new();
-    for note in &notes {
-        title_counts
-            .entry(note.title.to_lowercase())
-            .or_default()
-            .push(note.path.display().to_string());
-    }
-
-    let duplicate_titles: Vec<_> = title_counts
-        .iter()
-        .filter(|(_, paths)| paths.len() > 1)
-        .collect();
-
-    if !duplicate_titles.is_empty() {
+    // Display duplicate titles
+    if !report.duplicate_titles.is_empty() {
         println!("ERROR: Multiple notes with the same title:");
-        for (title, paths) in duplicate_titles {
+        for (title, paths) in &report.duplicate_titles {
             println!("  Title: {}", title);
             for path in paths {
                 println!("    - {}", path);
             }
         }
-        issues_found += title_counts
-            .values()
-            .filter(|paths| paths.len() > 1)
-            .count();
         println!();
     }
 
-    // Check for orphaned notes (no links and no tags)
-    let all_titles: Vec<String> = notes.iter().map(|n| n.title.clone()).collect();
-    let orphaned = graph.orphaned_notes(&all_titles);
-
-    let truly_orphaned: Vec<_> = orphaned
-        .iter()
-        .filter(|title| {
-            notes
-                .iter()
-                .find(|n| &n.title == *title)
-                .map(|n| n.tags.is_empty())
-                .unwrap_or(true)
-        })
-        .collect();
-
-    if !truly_orphaned.is_empty() {
+    // Display orphaned notes
+    if !report.orphaned_notes.is_empty() {
         println!("WARNING: Orphaned notes (no links, no tags):");
-        for title in truly_orphaned {
+        for title in &report.orphaned_notes {
             println!("  - {}", title);
         }
-        issues_found += orphaned.len();
         println!();
     }
 
     // Summary
-    if issues_found == 0 {
+    if !report.has_issues() {
         println!("All checks passed! Your notes are healthy.");
     } else {
-        println!("Found {} {} that may need attention.",
-            issues_found,
-            pluralize(issues_found, "issue", "issues")
+        println!(
+            "Found {} {} that may need attention.",
+            report.issue_count(),
+            pluralize(report.issue_count(), "issue", "issues")
         );
     }
 

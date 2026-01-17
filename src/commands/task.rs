@@ -1,38 +1,15 @@
-use crate::task::{self, Task};
-use crate::util::{pluralize, CommandContext};
+use crate::config::CLIConfig;
+use crate::util::pluralize;
+use bnotes::{BNotes, RealStorage};
 use anyhow::Result;
 use std::path::PathBuf;
 
 pub fn list(config_path: Option<PathBuf>, tags: &[String], status: Option<String>) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
 
-    // Get notes, optionally filtered by tags
-    let notes = if tags.is_empty() {
-        ctx.repo.discover_notes()?
-    } else {
-        ctx.repo.filter_by_tags(tags)?
-    };
-
-    // Extract tasks from all notes
-    let mut tasks = task::extract_tasks_from_notes(&notes);
-
-    // Filter by status if specified
-    if let Some(status_filter) = status {
-        let filter_open = status_filter.eq_ignore_ascii_case("open");
-        let filter_done = status_filter.eq_ignore_ascii_case("done");
-
-        if !filter_open && !filter_done {
-            anyhow::bail!("Invalid status filter: {}. Use 'open' or 'done'.", status_filter);
-        }
-
-        tasks.retain(|task| {
-            if filter_open {
-                !task.completed
-            } else {
-                task.completed
-            }
-        });
-    }
+    let tasks = bnotes.list_tasks(tags, status.as_deref())?;
 
     if tasks.is_empty() {
         println!("No tasks found.");
@@ -56,34 +33,11 @@ pub fn list(config_path: Option<PathBuf>, tags: &[String], status: Option<String
 }
 
 pub fn show(config_path: Option<PathBuf>, task_id: &str) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
 
-    // Parse task ID (format: "filename#index")
-    let parts: Vec<&str> = task_id.split('#').collect();
-    if parts.len() != 2 {
-        anyhow::bail!("Invalid task ID format. Expected 'filename#index'");
-    }
-
-    let filename = parts[0];
-    let index: usize = parts[1].parse()
-        .map_err(|_| anyhow::anyhow!("Invalid task index: {}", parts[1]))?;
-
-    // Find the note
-    let notes = ctx.repo.discover_notes()?;
-    let note = notes.iter()
-        .find(|n| n.path.file_stem()
-            .and_then(|s| s.to_str())
-            .map(|s| s == filename)
-            .unwrap_or(false))
-        .ok_or_else(|| anyhow::anyhow!("Note not found: {}", filename))?;
-
-    // Extract tasks from the note
-    let tasks = Task::extract_from_note(note);
-
-    // Find the specific task
-    let task = tasks.iter()
-        .find(|t| t.index == index)
-        .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
+    let (task, note) = bnotes.get_task(task_id)?;
 
     // Display task with context
     println!("Task: {}", task.id());

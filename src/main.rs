@@ -1,12 +1,6 @@
 mod commands;
 mod config;
 mod git;
-mod link;
-mod note;
-mod periodic;
-mod repository;
-mod task;
-mod template;
 mod util;
 
 use anyhow::Result;
@@ -228,7 +222,7 @@ fn main() -> Result<()> {
         },
         Commands::Daily { date, template, subcommand } => {
             use crate::commands::periodic::{handle_periodic, PeriodicAction};
-            use crate::periodic::Daily;
+            use bnotes::Daily;
 
             let action = if let Some(cmd) = subcommand {
                 match cmd {
@@ -250,7 +244,7 @@ fn main() -> Result<()> {
         }
         Commands::Weekly { date, template, subcommand } => {
             use crate::commands::periodic::{handle_periodic, PeriodicAction};
-            use crate::periodic::Weekly;
+            use bnotes::Weekly;
 
             let action = if let Some(cmd) = subcommand {
                 match cmd {
@@ -272,7 +266,7 @@ fn main() -> Result<()> {
         }
         Commands::Quarterly { date, template, subcommand } => {
             use crate::commands::periodic::{handle_periodic, PeriodicAction};
-            use crate::periodic::Quarterly;
+            use bnotes::Quarterly;
 
             let action = if let Some(cmd) = subcommand {
                 match cmd {

@@ -1,4 +1,6 @@
-use crate::note::Note;
+//! Task extraction and management from markdown notes
+
+use crate::repository_lib::Note;
 use pulldown_cmark::{Event, Options, Parser, Tag};
 use std::path::PathBuf;
 
@@ -115,5 +117,18 @@ More text.
         assert!(tasks[1].completed);
         assert_eq!(tasks[2].text, "Another task");
         assert!(!tasks[2].completed);
+    }
+
+    #[test]
+    fn test_task_id() {
+        let task = Task {
+            note_path: PathBuf::from("test-note.md"),
+            note_title: "Test Note".to_string(),
+            index: 3,
+            completed: false,
+            text: "Do something".to_string(),
+        };
+
+        assert_eq!(task.id(), "test-note#3");
     }
 }

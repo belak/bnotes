@@ -1,10 +1,15 @@
-use crate::util::{pluralize, CommandContext};
+use crate::config::CLIConfig;
+use crate::util::pluralize;
+use bnotes::{BNotes, RealStorage};
 use anyhow::Result;
 use std::path::PathBuf;
 
 pub fn run(config_path: Option<PathBuf>, query: &str) -> Result<()> {
-    let ctx = CommandContext::load(config_path)?;
-    let matches = ctx.repo.search(query)?;
+    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
+    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let bnotes = BNotes::with_defaults(storage);
+
+    let matches = bnotes.search(query)?;
 
     if matches.is_empty() {
         println!("No notes found matching: {}", query);
