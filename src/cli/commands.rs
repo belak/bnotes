@@ -197,7 +197,7 @@ pub fn init(notes_dir: Option<PathBuf>) -> Result<()> {
     println!("Notes directory created at: {}", notes_dir.display());
 
     // Create templates directory
-    let templates_dir = notes_dir.join(".templates");
+    let templates_dir = notes_dir.join(".btools/templates");
     fs::create_dir_all(&templates_dir).with_context(|| {
         format!(
             "Failed to create templates directory: {}",
@@ -245,7 +245,7 @@ updated: {{datetime}}
 # This file is stored in your notes directory and can be committed to version control
 
 # Directory for note templates (relative to notes root)
-template_dir = ".templates"
+template_dir = ".btools/templates"
 
 [periodic]
 # Template filenames for periodic notes (in template_dir)
