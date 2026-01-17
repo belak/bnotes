@@ -169,11 +169,10 @@ impl Repository {
     fn discover_notes_recursive(&self, path: &Path, notes: &mut Vec<Note>) -> Result<()> {
         // Skip if any component of the path starts with '.'
         for component in path.components() {
-            if let Some(name_str) = component.as_os_str().to_str() {
-                if name_str.starts_with('.') {
+            if let Some(name_str) = component.as_os_str().to_str()
+                && name_str.starts_with('.') {
                     return Ok(());
                 }
-            }
         }
 
         // If it's a directory, recurse into it
@@ -316,7 +315,7 @@ updated: {}
 }
 
 /// Render a template by replacing placeholders
-pub fn render_template(template_content: &str, title: &str) -> String {
+pub(crate) fn render_template(template_content: &str, title: &str) -> String {
     let now = Utc::now();
     let date = now.format("%Y-%m-%d").to_string();
     let datetime = now.to_rfc3339();

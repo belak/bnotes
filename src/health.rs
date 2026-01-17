@@ -43,7 +43,7 @@ impl HealthReport {
 }
 
 /// Run health checks on a collection of notes
-pub fn check_health(notes: &[Note]) -> HealthReport {
+pub(crate) fn check_health(notes: &[Note]) -> HealthReport {
     let graph = LinkGraph::build(notes);
 
     // Check for broken wiki links

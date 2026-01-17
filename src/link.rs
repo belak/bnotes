@@ -12,6 +12,12 @@ pub struct LinkGraph {
     pub inbound: HashMap<String, HashSet<String>>,
 }
 
+impl Default for LinkGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LinkGraph {
     pub fn new() -> Self {
         Self {
@@ -118,7 +124,7 @@ impl LinkGraph {
 /// Parses markdown using pulldown-cmark and extracts [[wiki link]] patterns
 /// from text events. Wiki links are not standard markdown, so they appear
 /// as plain text in the event stream.
-pub fn extract_wiki_links(content: &str) -> Vec<String> {
+pub(crate) fn extract_wiki_links(content: &str) -> Vec<String> {
     let parser = Parser::new(content);
     let mut links = Vec::new();
     let mut accumulated_text = String::new();

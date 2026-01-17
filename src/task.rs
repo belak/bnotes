@@ -73,7 +73,7 @@ impl Task {
 }
 
 /// Extract all tasks from multiple notes
-pub fn extract_tasks_from_notes(notes: &[Note]) -> Vec<Task> {
+pub(crate) fn extract_tasks_from_notes(notes: &[Note]) -> Vec<Task> {
     let mut all_tasks = Vec::new();
 
     for note in notes {

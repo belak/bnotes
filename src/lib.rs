@@ -3,6 +3,23 @@
 //! This library provides the core business logic for managing notes, tasks,
 //! and periodic notes. It separates business logic from CLI concerns like I/O,
 //! formatting, and editor integration.
+//!
+//! # Example
+//!
+//! ```no_run
+//! use bnotes::{BNotes, RealStorage};
+//! use std::path::PathBuf;
+//!
+//! let notes_dir = PathBuf::from("~/notes");
+//! let storage = Box::new(RealStorage::new(notes_dir));
+//! let bnotes = BNotes::with_defaults(storage);
+//!
+//! // Search for notes
+//! let results = bnotes.search("rust").unwrap();
+//! for note in results {
+//!     println!("{}", note.title);
+//! }
+//! ```
 
 pub mod config;
 pub mod health;
@@ -12,9 +29,11 @@ pub mod repository;
 pub mod storage;
 pub mod task;
 
-use anyhow::Result;
 use std::collections::HashSet;
 use std::path::PathBuf;
+
+/// Result type alias using anyhow::Error
+pub type Result<T> = std::result::Result<T, anyhow::Error>;
 
 /// Main library API for BNotes
 ///
@@ -241,7 +260,7 @@ impl BNotes {
         }
 
         // Sort by identifier (chronological)
-        periods.sort_by(|a, b| a.identifier().cmp(&b.identifier()));
+        periods.sort_by_key(|a| a.identifier());
 
         Ok(periods)
     }

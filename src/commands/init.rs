@@ -48,7 +48,6 @@ pub fn run(notes_dir: Option<PathBuf>) -> Result<()> {
     // Create config
     let config = CLIConfig {
         notes_dir: notes_dir.clone(),
-        ..Default::default()
     };
 
     let config_content = toml::to_string_pretty(&config)
