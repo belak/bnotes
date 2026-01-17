@@ -80,6 +80,45 @@ enum Commands {
     /// Task management commands
     #[command(subcommand)]
     Task(TaskCommands),
+
+    /// Daily note management
+    Daily {
+        /// Date (YYYY-MM-DD format) or 'prev'/'next'
+        date: Option<String>,
+
+        /// Override configured template
+        #[arg(long)]
+        template: Option<String>,
+
+        #[command(subcommand)]
+        subcommand: Option<PeriodicSubcommands>,
+    },
+
+    /// Weekly note management
+    Weekly {
+        /// Date (YYYY-MM-DD format) or 'prev'/'next'
+        date: Option<String>,
+
+        /// Override configured template
+        #[arg(long)]
+        template: Option<String>,
+
+        #[command(subcommand)]
+        subcommand: Option<PeriodicSubcommands>,
+    },
+
+    /// Quarterly note management
+    Quarterly {
+        /// Date (YYYY-MM-DD format), quarter shortcut (q1-q4), or 'prev'/'next'
+        date: Option<String>,
+
+        /// Override configured template
+        #[arg(long)]
+        template: Option<String>,
+
+        #[command(subcommand)]
+        subcommand: Option<PeriodicSubcommands>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -125,6 +164,16 @@ enum TaskCommands {
         /// Task ID (e.g., "project-notes#2")
         task_id: String,
     },
+}
+
+#[derive(Subcommand)]
+enum PeriodicSubcommands {
+    /// List all notes of this period type
+    List,
+    /// Navigate to previous period
+    Prev,
+    /// Navigate to next period
+    Next,
 }
 
 fn main() -> Result<()> {
@@ -177,6 +226,72 @@ fn main() -> Result<()> {
                 commands::task::show(cli.config, &task_id)?;
             }
         },
+        Commands::Daily { date, template, subcommand } => {
+            use crate::commands::periodic::{handle_periodic, PeriodicAction};
+            use crate::periodic::Daily;
+
+            let action = if let Some(cmd) = subcommand {
+                match cmd {
+                    PeriodicSubcommands::List => PeriodicAction::List,
+                    PeriodicSubcommands::Prev => PeriodicAction::Prev,
+                    PeriodicSubcommands::Next => PeriodicAction::Next,
+                }
+            } else if date.as_deref() == Some("prev") {
+                PeriodicAction::Prev
+            } else if date.as_deref() == Some("next") {
+                PeriodicAction::Next
+            } else if date.as_deref() == Some("list") {
+                PeriodicAction::List
+            } else {
+                PeriodicAction::Open(date)
+            };
+
+            handle_periodic::<Daily>(cli.config, action, template)?;
+        }
+        Commands::Weekly { date, template, subcommand } => {
+            use crate::commands::periodic::{handle_periodic, PeriodicAction};
+            use crate::periodic::Weekly;
+
+            let action = if let Some(cmd) = subcommand {
+                match cmd {
+                    PeriodicSubcommands::List => PeriodicAction::List,
+                    PeriodicSubcommands::Prev => PeriodicAction::Prev,
+                    PeriodicSubcommands::Next => PeriodicAction::Next,
+                }
+            } else if date.as_deref() == Some("prev") {
+                PeriodicAction::Prev
+            } else if date.as_deref() == Some("next") {
+                PeriodicAction::Next
+            } else if date.as_deref() == Some("list") {
+                PeriodicAction::List
+            } else {
+                PeriodicAction::Open(date)
+            };
+
+            handle_periodic::<Weekly>(cli.config, action, template)?;
+        }
+        Commands::Quarterly { date, template, subcommand } => {
+            use crate::commands::periodic::{handle_periodic, PeriodicAction};
+            use crate::periodic::Quarterly;
+
+            let action = if let Some(cmd) = subcommand {
+                match cmd {
+                    PeriodicSubcommands::List => PeriodicAction::List,
+                    PeriodicSubcommands::Prev => PeriodicAction::Prev,
+                    PeriodicSubcommands::Next => PeriodicAction::Next,
+                }
+            } else if date.as_deref() == Some("prev") {
+                PeriodicAction::Prev
+            } else if date.as_deref() == Some("next") {
+                PeriodicAction::Next
+            } else if date.as_deref() == Some("list") {
+                PeriodicAction::List
+            } else {
+                PeriodicAction::Open(date)
+            };
+
+            handle_periodic::<Quarterly>(cli.config, action, template)?;
+        }
     }
 
     Ok(())
