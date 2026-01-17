@@ -3,6 +3,7 @@ mod config;
 mod git;
 mod link;
 mod note;
+mod periodic;
 mod repository;
 mod task;
 mod template;
