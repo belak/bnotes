@@ -7,17 +7,39 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::{Path, PathBuf};
 
 // ============================================================================
 // Frontmatter
 // ============================================================================
 
+/// Custom deserializer for tags that accepts either array or comma-separated string
+fn deserialize_tags<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TagsFormat {
+        Array(Vec<String>),
+        String(String),
+    }
+
+    match TagsFormat::deserialize(deserializer)? {
+        TagsFormat::Array(tags) => Ok(tags),
+        TagsFormat::String(s) => Ok(s
+            .split(',')
+            .map(|tag| tag.trim().to_string())
+            .filter(|tag| !tag.is_empty())
+            .collect()),
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Frontmatter {
     pub title: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_tags")]
     pub tags: Vec<String>,
     pub created: Option<DateTime<Utc>>,
     pub updated: Option<DateTime<Utc>>,
@@ -306,5 +328,74 @@ More text.
         };
 
         assert_eq!(task.id(), "test-note#3");
+    }
+
+    #[test]
+    fn test_tags_array_format() {
+        let content = r#"---
+title: Test Note
+tags: [rust, testing, example]
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert_eq!(note.tags, vec!["rust", "testing", "example"]);
+    }
+
+    #[test]
+    fn test_tags_comma_separated_format() {
+        let content = r#"---
+title: Test Note
+tags: "rust, testing, example"
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert_eq!(note.tags, vec!["rust", "testing", "example"]);
+    }
+
+    #[test]
+    fn test_tags_comma_separated_with_extra_whitespace() {
+        let content = r#"---
+title: Test Note
+tags: "rust,  testing  ,   example"
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert_eq!(note.tags, vec!["rust", "testing", "example"]);
+    }
+
+    #[test]
+    fn test_tags_empty_string() {
+        let content = r#"---
+title: Test Note
+tags: ""
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert_eq!(note.tags, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_tags_missing_field() {
+        let content = r#"---
+title: Test Note
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert_eq!(note.tags, Vec::<String>::new());
     }
 }
