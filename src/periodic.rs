@@ -115,6 +115,17 @@ impl PeriodType for Weekly {
     }
 
     fn from_date_str(date_str: &str) -> Result<Self> {
+        // Try to parse as week identifier first (e.g., "2026-W03")
+        if date_str.contains("-W") {
+            let parts: Vec<&str> = date_str.split("-W").collect();
+            if parts.len() == 2 {
+                if let (Ok(year), Ok(week)) = (parts[0].parse::<i32>(), parts[1].parse::<u32>()) {
+                    return Ok(Self { year, week });
+                }
+            }
+        }
+
+        // Fall back to parsing as date string
         let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")?;
         Ok(Self::from_date(date))
     }
@@ -172,20 +183,35 @@ impl PeriodType for Quarterly {
     }
 
     fn from_date_str(date_str: &str) -> Result<Self> {
-        // Handle both date strings and quarter shortcuts (q1, Q1, etc.)
-        let date_str = date_str.trim().to_lowercase();
-        if date_str.starts_with('q') {
-            let quarter_str = date_str.strip_prefix('q').unwrap();
+        let date_str = date_str.trim();
+
+        // Try to parse as quarter identifier (e.g., "2026-Q1")
+        if date_str.contains("-Q") {
+            let parts: Vec<&str> = date_str.split("-Q").collect();
+            if parts.len() == 2 {
+                if let (Ok(year), Ok(quarter)) = (parts[0].parse::<i32>(), parts[1].parse::<u32>()) {
+                    if quarter >= 1 && quarter <= 4 {
+                        return Ok(Self { year, quarter });
+                    }
+                }
+            }
+        }
+
+        // Handle quarter shortcuts (q1, Q1, etc.)
+        let date_str_lower = date_str.to_lowercase();
+        if date_str_lower.starts_with('q') {
+            let quarter_str = date_str_lower.strip_prefix('q').unwrap();
             let quarter: u32 = quarter_str.parse()?;
             if quarter < 1 || quarter > 4 {
                 anyhow::bail!("Quarter must be between 1 and 4");
             }
             let year = chrono::Local::now().year();
-            Ok(Self { year, quarter })
-        } else {
-            let date = NaiveDate::parse_from_str(&date_str, "%Y-%m-%d")?;
-            Ok(Self::from_date(date))
+            return Ok(Self { year, quarter });
         }
+
+        // Fall back to parsing as date string
+        let date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")?;
+        Ok(Self::from_date(date))
     }
 
     fn current() -> Self {
