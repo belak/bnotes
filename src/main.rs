@@ -1,5 +1,4 @@
 mod cli;
-mod git;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};

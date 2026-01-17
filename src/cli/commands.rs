@@ -4,8 +4,8 @@
 //! from the main entry point.
 
 use super::config::CLIConfig;
+use super::git::GitRepo;
 use super::utils::{expand_home, pluralize};
-use crate::git::GitRepo;
 use anyhow::{Context, Result};
 use bnotes::{BNotes, RealStorage};
 use std::io::{self, Write};
