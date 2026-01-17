@@ -1,4 +1,4 @@
-use crate::config::CLIConfig;
+use crate::cli_config::CLIConfig;
 use anyhow::{Context, Result};
 use std::fs;
 use std::io::{self, Write};

@@ -1,4 +1,4 @@
-use crate::config::CLIConfig;
+use crate::cli_config::CLIConfig;
 use anyhow::{Context, Result};
 use bnotes::{BNotes, RealStorage};
 use std::path::PathBuf;

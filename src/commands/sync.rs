@@ -1,4 +1,4 @@
-use crate::config::CLIConfig;
+use crate::cli_config::CLIConfig;
 use crate::git::GitRepo;
 use anyhow::Result;
 use std::path::PathBuf;

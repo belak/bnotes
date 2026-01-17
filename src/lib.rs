@@ -4,13 +4,13 @@
 //! and periodic notes. It separates business logic from CLI concerns like I/O,
 //! formatting, and editor integration.
 
-pub mod health_lib;
-pub mod lib_config;
-pub mod link_lib;
-pub mod periodic_lib;
-pub mod repository_lib;
+pub mod config;
+pub mod health;
+pub mod link;
+pub mod periodic;
+pub mod repository;
 pub mod storage;
-pub mod task_lib;
+pub mod task;
 
 use anyhow::Result;
 use std::collections::HashSet;
@@ -21,36 +21,36 @@ use std::path::PathBuf;
 /// This struct provides the primary interface for interacting with notes.
 /// It manages configuration and delegates operations to the repository layer.
 pub struct BNotes {
-    config: lib_config::LibraryConfig,
-    repo: repository_lib::Repository,
+    config: config::LibraryConfig,
+    repo: repository::Repository,
 }
 
 impl BNotes {
     /// Create a new BNotes instance with the given configuration and storage
-    pub fn new(config: lib_config::LibraryConfig, storage: Box<dyn storage::Storage>) -> Self {
-        let repo = repository_lib::Repository::new(storage);
+    pub fn new(config: config::LibraryConfig, storage: Box<dyn storage::Storage>) -> Self {
+        let repo = repository::Repository::new(storage);
         Self { config, repo }
     }
 
     /// Create BNotes by loading configuration from storage
     pub fn from_storage(storage: Box<dyn storage::Storage>) -> Result<Self> {
-        let config = lib_config::LibraryConfig::load(&*storage)?;
+        let config = config::LibraryConfig::load(&*storage)?;
         Ok(Self::new(config, storage))
     }
 
     /// Create BNotes with default configuration
     pub fn with_defaults(storage: Box<dyn storage::Storage>) -> Self {
-        let config = lib_config::LibraryConfig::load_or_default(&*storage);
+        let config = config::LibraryConfig::load_or_default(&*storage);
         Self::new(config, storage)
     }
 
     /// Search notes by query (case-insensitive substring matching)
-    pub fn search(&self, query: &str) -> Result<Vec<repository_lib::Note>> {
+    pub fn search(&self, query: &str) -> Result<Vec<repository::Note>> {
         self.repo.search(query)
     }
 
     /// List all notes, optionally filtered by tags
-    pub fn list_notes(&self, tags: &[String]) -> Result<Vec<repository_lib::Note>> {
+    pub fn list_notes(&self, tags: &[String]) -> Result<Vec<repository::Note>> {
         if tags.is_empty() {
             self.repo.discover_notes()
         } else {
@@ -59,7 +59,7 @@ impl BNotes {
     }
 
     /// Find a note by title (case-insensitive)
-    pub fn find_note_by_title(&self, title: &str) -> Result<Vec<repository_lib::Note>> {
+    pub fn find_note_by_title(&self, title: &str) -> Result<Vec<repository::Note>> {
         self.repo.find_by_title(title)
     }
 
@@ -68,7 +68,7 @@ impl BNotes {
     /// Returns (outbound_links, inbound_links) where each is a set of note titles
     pub fn get_note_links(&self, title: &str) -> Result<(HashSet<String>, HashSet<String>)> {
         let all_notes = self.repo.discover_notes()?;
-        let graph = link_lib::LinkGraph::build(&all_notes);
+        let graph = link::LinkGraph::build(&all_notes);
 
         let outbound = graph
             .outbound
@@ -86,9 +86,9 @@ impl BNotes {
     }
 
     /// Get the full link graph for all notes
-    pub fn get_link_graph(&self) -> Result<link_lib::LinkGraph> {
+    pub fn get_link_graph(&self) -> Result<link::LinkGraph> {
         let all_notes = self.repo.discover_notes()?;
-        Ok(link_lib::LinkGraph::build(&all_notes))
+        Ok(link::LinkGraph::build(&all_notes))
     }
 
     /// Create a new note with the given title and optional template
@@ -102,7 +102,7 @@ impl BNotes {
     /// List all tasks, optionally filtered by tags and status
     ///
     /// Status can be Some("open"), Some("done"), or None for all tasks
-    pub fn list_tasks(&self, tags: &[String], status: Option<&str>) -> Result<Vec<task_lib::Task>> {
+    pub fn list_tasks(&self, tags: &[String], status: Option<&str>) -> Result<Vec<task::Task>> {
         // Get notes, optionally filtered by tags
         let notes = if tags.is_empty() {
             self.repo.discover_notes()?
@@ -111,7 +111,7 @@ impl BNotes {
         };
 
         // Extract tasks from all notes
-        let mut tasks = task_lib::extract_tasks_from_notes(&notes);
+        let mut tasks = task::extract_tasks_from_notes(&notes);
 
         // Filter by status if specified
         if let Some(status_filter) = status {
@@ -137,7 +137,7 @@ impl BNotes {
     /// Get a specific task by its ID (format: "filename#index")
     ///
     /// Returns (task, note) tuple
-    pub fn get_task(&self, task_id: &str) -> Result<(task_lib::Task, repository_lib::Note)> {
+    pub fn get_task(&self, task_id: &str) -> Result<(task::Task, repository::Note)> {
         // Parse task ID (format: "filename#index")
         let parts: Vec<&str> = task_id.split('#').collect();
         if parts.len() != 2 {
@@ -163,7 +163,7 @@ impl BNotes {
             .ok_or_else(|| anyhow::anyhow!("Note not found: {}", filename))?;
 
         // Extract tasks from the note
-        let tasks = task_lib::Task::extract_from_note(note);
+        let tasks = task::Task::extract_from_note(note);
 
         // Find the specific task
         let task = tasks
@@ -177,7 +177,7 @@ impl BNotes {
     /// Open or create a periodic note for a given period
     ///
     /// Returns the relative path to the periodic note
-    pub fn open_periodic<P: periodic_lib::PeriodType>(
+    pub fn open_periodic<P: periodic::PeriodType>(
         &self,
         period: P,
         template_name: Option<&str>,
@@ -210,7 +210,7 @@ impl BNotes {
         // Generate content
         let content = if self.repo.storage.exists(&template_path) {
             let template_content = self.repo.storage.read_to_string(&template_path)?;
-            repository_lib::render_template(&template_content, &period.identifier())
+            repository::render_template(&template_content, &period.identifier())
         } else {
             // Minimal note with just title
             format!("# {}\n\n", period.identifier())
@@ -225,7 +225,7 @@ impl BNotes {
     /// List all periodic notes of a given type
     ///
     /// Returns a list of periods that have notes
-    pub fn list_periodic<P: periodic_lib::PeriodType>(&self) -> Result<Vec<P>> {
+    pub fn list_periodic<P: periodic::PeriodType>(&self) -> Result<Vec<P>> {
         let mut periods: Vec<P> = Vec::new();
 
         // Scan notes directory for matching files
@@ -250,7 +250,7 @@ impl BNotes {
     ///
     /// Direction: "prev" or "next"
     /// Returns the relative path to the periodic note
-    pub fn navigate_periodic<P: periodic_lib::PeriodType>(
+    pub fn navigate_periodic<P: periodic::PeriodType>(
         &self,
         direction: &str,
         template_name: Option<&str>,
@@ -269,20 +269,20 @@ impl BNotes {
     ///
     /// Returns a report of potential issues including broken links, missing metadata,
     /// duplicate titles, and orphaned notes
-    pub fn check_health(&self) -> Result<health_lib::HealthReport> {
+    pub fn check_health(&self) -> Result<health::HealthReport> {
         let notes = self.repo.discover_notes()?;
-        Ok(health_lib::check_health(&notes))
+        Ok(health::check_health(&notes))
     }
 }
 
 // Re-export main types for convenience
-pub use health_lib::HealthReport;
-pub use lib_config::{LibraryConfig, PeriodicConfig};
-pub use link_lib::LinkGraph;
-pub use periodic_lib::{Daily, PeriodType, Quarterly, Weekly};
-pub use repository_lib::{Frontmatter, Note};
+pub use config::{LibraryConfig, PeriodicConfig};
+pub use health::HealthReport;
+pub use link::LinkGraph;
+pub use periodic::{Daily, PeriodType, Quarterly, Weekly};
+pub use repository::{Frontmatter, Note};
 pub use storage::{MemoryStorage, RealStorage, Storage};
-pub use task_lib::Task;
+pub use task::Task;
 
 #[cfg(test)]
 mod tests {

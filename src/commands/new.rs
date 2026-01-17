@@ -1,4 +1,4 @@
-use crate::config::CLIConfig;
+use crate::cli_config::CLIConfig;
 use bnotes::{BNotes, RealStorage};
 use anyhow::Result;
 use std::io::{self, Write};

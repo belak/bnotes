@@ -1,6 +1,6 @@
 //! Link extraction and graph building for wiki-style links
 
-use crate::repository_lib::Note;
+use crate::repository::Note;
 use pulldown_cmark::{Event, Parser};
 use std::collections::{HashMap, HashSet};
 

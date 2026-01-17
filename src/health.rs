@@ -3,8 +3,8 @@
 //! This module provides functionality to check for common issues in a note collection
 //! such as broken links, missing metadata, and duplicate titles.
 
-use crate::link_lib::LinkGraph;
-use crate::repository_lib::Note;
+use crate::link::LinkGraph;
+use crate::repository::Note;
 use std::collections::HashMap;
 
 /// Results of a health check operation

@@ -1,6 +1,6 @@
 //! Task extraction and management from markdown notes
 
-use crate::repository_lib::Note;
+use crate::repository::Note;
 use pulldown_cmark::{Event, Options, Parser, Tag};
 use std::path::PathBuf;
 

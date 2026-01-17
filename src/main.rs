@@ -1,5 +1,5 @@
+mod cli_config;
 mod commands;
-mod config;
 mod git;
 mod util;
 
