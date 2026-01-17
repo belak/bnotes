@@ -9,6 +9,40 @@ pub struct Config {
     pub editor: String,
     #[serde(default = "default_template_dir")]
     pub template_dir: PathBuf,
+    #[serde(default)]
+    pub periodic: PeriodicConfig,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PeriodicConfig {
+    #[serde(default = "default_daily_template")]
+    pub daily_template: String,
+    #[serde(default = "default_weekly_template")]
+    pub weekly_template: String,
+    #[serde(default = "default_quarterly_template")]
+    pub quarterly_template: String,
+}
+
+fn default_daily_template() -> String {
+    "daily.md".to_string()
+}
+
+fn default_weekly_template() -> String {
+    "weekly.md".to_string()
+}
+
+fn default_quarterly_template() -> String {
+    "quarterly.md".to_string()
+}
+
+impl Default for PeriodicConfig {
+    fn default() -> Self {
+        Self {
+            daily_template: default_daily_template(),
+            weekly_template: default_weekly_template(),
+            quarterly_template: default_quarterly_template(),
+        }
+    }
 }
 
 fn default_editor() -> String {
@@ -83,6 +117,7 @@ impl Default for Config {
             notes_dir: PathBuf::from("~/notes"),
             editor: default_editor(),
             template_dir: default_template_dir(),
+            periodic: PeriodicConfig::default(),
         }
     }
 }
