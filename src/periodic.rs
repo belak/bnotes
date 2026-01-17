@@ -118,10 +118,10 @@ impl PeriodType for Weekly {
         // Try to parse as week identifier first (e.g., "2026-W03")
         if date_str.contains("-W") {
             let parts: Vec<&str> = date_str.split("-W").collect();
-            if parts.len() == 2 {
-                if let (Ok(year), Ok(week)) = (parts[0].parse::<i32>(), parts[1].parse::<u32>()) {
-                    return Ok(Self { year, week });
-                }
+            if parts.len() == 2
+                && let (Ok(year), Ok(week)) = (parts[0].parse::<i32>(), parts[1].parse::<u32>())
+            {
+                return Ok(Self { year, week });
             }
         }
 
@@ -188,12 +188,11 @@ impl PeriodType for Quarterly {
         // Try to parse as quarter identifier (e.g., "2026-Q1")
         if date_str.contains("-Q") {
             let parts: Vec<&str> = date_str.split("-Q").collect();
-            if parts.len() == 2 {
-                if let (Ok(year), Ok(quarter)) = (parts[0].parse::<i32>(), parts[1].parse::<u32>()) {
-                    if quarter >= 1 && quarter <= 4 {
-                        return Ok(Self { year, quarter });
-                    }
-                }
+            if parts.len() == 2
+                && let (Ok(year), Ok(quarter)) = (parts[0].parse::<i32>(), parts[1].parse::<u32>())
+                && (1..=4).contains(&quarter)
+            {
+                return Ok(Self { year, quarter });
             }
         }
 
@@ -202,7 +201,7 @@ impl PeriodType for Quarterly {
         if date_str_lower.starts_with('q') {
             let quarter_str = date_str_lower.strip_prefix('q').unwrap();
             let quarter: u32 = quarter_str.parse()?;
-            if quarter < 1 || quarter > 4 {
+            if !(1..=4).contains(&quarter) {
                 anyhow::bail!("Quarter must be between 1 and 4");
             }
             let year = chrono::Local::now().year();

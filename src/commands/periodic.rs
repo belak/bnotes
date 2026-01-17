@@ -143,14 +143,14 @@ fn list_periods<P: PeriodType>(ctx: &CommandContext) -> Result<()> {
         let entry = entry?;
         let path = entry.path();
 
-        if path.is_file() {
-            if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                // Try to parse as this period type
-                if let Ok(period) = P::from_date_str(stem) {
-                    // Verify it matches the filename format
-                    if period.identifier() == stem {
-                        periods.push(period);
-                    }
+        if path.is_file()
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            // Try to parse as this period type
+            if let Ok(period) = P::from_date_str(stem) {
+                // Verify it matches the filename format
+                if period.identifier() == stem {
+                    periods.push(period);
                 }
             }
         }
@@ -162,7 +162,7 @@ fn list_periods<P: PeriodType>(ctx: &CommandContext) -> Result<()> {
     }
 
     // Sort by identifier (which is chronological)
-    periods.sort_by(|a, b| a.identifier().cmp(&b.identifier()));
+    periods.sort_by_key(|a| a.identifier());
 
     for period in periods {
         println!("{}", period.display_string());

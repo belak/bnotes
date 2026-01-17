@@ -108,13 +108,7 @@ impl Note {
         // Extract body by removing the frontmatter block from the original content
         let body = if found_metadata {
             // Find the end of the frontmatter block in the original content
-            if let Some(end_pos) = content.find("\n---\n").or_else(|| content.find("\n---").map(|pos| {
-                if content.len() > pos + 4 {
-                    pos
-                } else {
-                    pos
-                }
-            })) {
+            if let Some(end_pos) = content.find("\n---\n").or_else(|| content.find("\n---")) {
                 content[end_pos + 4..].trim_start().to_string()
             } else {
                 content.to_string()
