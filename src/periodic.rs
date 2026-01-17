@@ -249,4 +249,62 @@ mod tests {
         assert_eq!(quarterly.identifier(), "2026-Q1");
         assert_eq!(quarterly.filename(), "2026-Q1.md");
     }
+
+    #[test]
+    fn test_daily_navigation() {
+        let daily = Daily::from_date(NaiveDate::from_ymd_opt(2026, 1, 16).unwrap());
+        let prev = daily.prev();
+        let next = daily.next();
+
+        assert_eq!(prev.identifier(), "2026-01-15");
+        assert_eq!(next.identifier(), "2026-01-17");
+    }
+
+    #[test]
+    fn test_weekly_navigation() {
+        let weekly = Weekly::from_date(NaiveDate::from_ymd_opt(2026, 1, 16).unwrap());
+        let prev = weekly.prev();
+        let next = weekly.next();
+
+        assert_eq!(prev.identifier(), "2026-W02");
+        assert_eq!(next.identifier(), "2026-W04");
+    }
+
+    #[test]
+    fn test_quarterly_navigation() {
+        let q1 = Quarterly::from_date(NaiveDate::from_ymd_opt(2026, 1, 16).unwrap());
+        let prev = q1.prev();
+        let next = q1.next();
+
+        assert_eq!(prev.identifier(), "2025-Q4");
+        assert_eq!(next.identifier(), "2026-Q2");
+    }
+
+    #[test]
+    fn test_quarterly_shortcuts() {
+        let q1 = Quarterly::from_date_str("q1").unwrap();
+        let q4 = Quarterly::from_date_str("Q4").unwrap();
+
+        assert_eq!(q1.quarter, 1);
+        assert_eq!(q4.quarter, 4);
+    }
+
+    #[test]
+    fn test_weekly_display() {
+        let weekly = Weekly::from_date(NaiveDate::from_ymd_opt(2026, 1, 16).unwrap());
+        let display = weekly.display_string();
+
+        assert!(display.contains("2026-W03"));
+        assert!(display.contains("Jan 12"));
+        assert!(display.contains("Jan 18"));
+    }
+
+    #[test]
+    fn test_quarterly_display() {
+        let q1 = Quarterly::from_date(NaiveDate::from_ymd_opt(2026, 1, 16).unwrap());
+        let display = q1.display_string();
+
+        assert!(display.contains("2026-Q1"));
+        assert!(display.contains("Jan - Mar"));
+    }
 }
