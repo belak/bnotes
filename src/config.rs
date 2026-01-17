@@ -11,8 +11,8 @@ use crate::storage::Storage;
 
 /// Library configuration loaded from the notes directory
 ///
-/// This configuration is stored within the notes directory (at .bnotes/config.toml
-/// or config.toml) and contains settings specific to that notes collection.
+/// This configuration is stored within the notes directory at .bnotes/config.toml
+/// and contains settings specific to that notes collection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibraryConfig {
     #[serde(default = "default_template_dir")]
@@ -70,21 +70,14 @@ impl Default for LibraryConfig {
 impl LibraryConfig {
     /// Load library config from storage
     ///
-    /// Looks for .bnotes/config.toml or config.toml in the notes directory
+    /// Looks for .bnotes/config.toml in the notes directory
     pub fn load(storage: &dyn Storage) -> Result<Self> {
-        // Try .bnotes/config.toml first (preferred location)
         if storage.exists(Path::new(".bnotes/config.toml")) {
             let content = storage.read_to_string(Path::new(".bnotes/config.toml"))?;
             return toml::from_str(&content).context("Failed to parse .bnotes/config.toml");
         }
 
-        // Fall back to config.toml in root
-        if storage.exists(Path::new("config.toml")) {
-            let content = storage.read_to_string(Path::new("config.toml"))?;
-            return toml::from_str(&content).context("Failed to parse config.toml");
-        }
-
-        anyhow::bail!("No library config found. Expected .bnotes/config.toml or config.toml")
+        anyhow::bail!("No library config found. Expected .bnotes/config.toml")
     }
 
     /// Load config or return defaults if not found
@@ -124,26 +117,6 @@ daily_template = "custom-daily.md"
     }
 
     #[test]
-    fn test_load_config_from_root() {
-        let storage = MemoryStorage::new();
-        storage
-            .write(
-                Path::new("config.toml"),
-                r#"
-template_dir = ".my-templates"
-
-[periodic]
-weekly_template = "custom-weekly.md"
-"#,
-            )
-            .unwrap();
-
-        let config = LibraryConfig::load(&storage).unwrap();
-        assert_eq!(config.template_dir, PathBuf::from(".my-templates"));
-        assert_eq!(config.periodic.weekly_template, "custom-weekly.md");
-    }
-
-    #[test]
     fn test_load_or_default_with_no_config() {
         let storage = MemoryStorage::new();
         let config = LibraryConfig::load_or_default(&storage);
@@ -152,25 +125,5 @@ weekly_template = "custom-weekly.md"
         assert_eq!(config.periodic.daily_template, "daily.md");
         assert_eq!(config.periodic.weekly_template, "weekly.md");
         assert_eq!(config.periodic.quarterly_template, "quarterly.md");
-    }
-
-    #[test]
-    fn test_prefers_bnotes_dir_over_root() {
-        let storage = MemoryStorage::new();
-        storage
-            .write(
-                Path::new("config.toml"),
-                r#"template_dir = "root-templates""#,
-            )
-            .unwrap();
-        storage
-            .write(
-                Path::new(".bnotes/config.toml"),
-                r#"template_dir = "bnotes-templates""#,
-            )
-            .unwrap();
-
-        let config = LibraryConfig::load(&storage).unwrap();
-        assert_eq!(config.template_dir, PathBuf::from("bnotes-templates"));
     }
 }
