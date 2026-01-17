@@ -1,6 +1,6 @@
 mod cli;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
@@ -13,12 +13,33 @@ use std::path::PathBuf;
 #[command(about = "A personal note-taking CLI with task management and wiki features")]
 #[command(version)]
 struct Cli {
-    /// Path to config file (overrides $BNOTES_CONFIG and default)
+    /// Notes directory (overrides $BNOTES_DIR)
     #[arg(long, global = true)]
-    config: Option<PathBuf>,
+    notes_dir: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Commands,
+}
+
+/// Resolve notes directory from CLI arg, env var, or default
+fn resolve_notes_dir(cli_arg: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(dir) = cli_arg {
+        return Ok(dir);
+    }
+
+    if let Ok(env_dir) = std::env::var("BNOTES_DIR") {
+        return Ok(PathBuf::from(env_dir));
+    }
+
+    // Default: $XDG_DATA_HOME/bnotes or ~/.local/share/bnotes
+    let data_home = if let Ok(xdg_data) = std::env::var("XDG_DATA_HOME") {
+        PathBuf::from(xdg_data)
+    } else {
+        let home = std::env::var("HOME").context("HOME environment variable not set")?;
+        PathBuf::from(home).join(".local/share")
+    };
+
+    Ok(data_home.join("bnotes"))
 }
 
 #[derive(Subcommand)]
@@ -47,13 +68,6 @@ enum Commands {
 
     /// List open tasks (alias for 'task list --status open')
     Tasks,
-
-    /// Initialize bnotes configuration
-    Init {
-        /// Notes directory path
-        #[arg(long)]
-        notes_dir: Option<PathBuf>,
-    },
 
     /// Check for issues in the note collection
     Doctor,
@@ -177,52 +191,50 @@ enum PeriodicSubcommands {
 
 fn main() -> Result<()> {
     let cli_args = Cli::parse();
+    let notes_dir = resolve_notes_dir(cli_args.notes_dir)?;
 
     match cli_args.command {
         Commands::Search { query } => {
-            cli::commands::search(cli_args.config, &query)?;
+            cli::commands::search(&notes_dir, &query)?;
         }
         Commands::New { title, template } => {
-            cli::commands::new(cli_args.config, title, template)?;
+            cli::commands::new(&notes_dir, title, template)?;
         }
         Commands::Edit { title } => {
-            cli::commands::edit(cli_args.config, &title)?;
+            cli::commands::edit(&notes_dir, &title)?;
         }
         Commands::Tasks => {
-            cli::commands::task_list(cli_args.config, &[], Some("open".to_string()))?;
-        }
-        Commands::Init { notes_dir } => {
-            cli::commands::init(notes_dir)?;
+            cli::commands::task_list(&notes_dir, &[], Some("open".to_string()))?;
         }
         Commands::Doctor => {
-            cli::commands::doctor(cli_args.config)?;
+            cli::commands::doctor(&notes_dir)?;
         }
         Commands::Sync { message } => {
-            cli::commands::sync(cli_args.config, message)?;
+            cli::commands::sync(&notes_dir, message)?;
         }
         Commands::Pull => {
-            cli::commands::pull(cli_args.config)?;
+            cli::commands::pull(&notes_dir)?;
         }
         Commands::Note(note_cmd) => match note_cmd {
             NoteCommands::List { tags } => {
-                cli::commands::note_list(cli_args.config, &tags)?;
+                cli::commands::note_list(&notes_dir, &tags)?;
             }
             NoteCommands::Show { title } => {
-                cli::commands::note_show(cli_args.config, &title)?;
+                cli::commands::note_show(&notes_dir, &title)?;
             }
             NoteCommands::Links { title } => {
-                cli::commands::note_links(cli_args.config, &title)?;
+                cli::commands::note_links(&notes_dir, &title)?;
             }
             NoteCommands::Graph => {
-                cli::commands::note_graph(cli_args.config)?;
+                cli::commands::note_graph(&notes_dir)?;
             }
         },
         Commands::Task(task_cmd) => match task_cmd {
             TaskCommands::List { tags, status } => {
-                cli::commands::task_list(cli_args.config, &tags, status)?;
+                cli::commands::task_list(&notes_dir, &tags, status)?;
             }
             TaskCommands::Show { task_id } => {
-                cli::commands::task_show(cli_args.config, &task_id)?;
+                cli::commands::task_show(&notes_dir, &task_id)?;
             }
         },
         Commands::Daily {
@@ -248,7 +260,7 @@ fn main() -> Result<()> {
                 cli::PeriodicAction::Open(date)
             };
 
-            cli::commands::periodic::<Daily>(cli_args.config, action, template)?;
+            cli::commands::periodic::<Daily>(&notes_dir, action, template)?;
         }
         Commands::Weekly {
             date,
@@ -273,7 +285,7 @@ fn main() -> Result<()> {
                 cli::PeriodicAction::Open(date)
             };
 
-            cli::commands::periodic::<Weekly>(cli_args.config, action, template)?;
+            cli::commands::periodic::<Weekly>(&notes_dir, action, template)?;
         }
         Commands::Quarterly {
             date,
@@ -298,7 +310,7 @@ fn main() -> Result<()> {
                 cli::PeriodicAction::Open(date)
             };
 
-            cli::commands::periodic::<Quarterly>(cli_args.config, action, template)?;
+            cli::commands::periodic::<Quarterly>(&notes_dir, action, template)?;
         }
     }
 

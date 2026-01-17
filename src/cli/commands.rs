@@ -3,22 +3,40 @@
 //! All CLI command logic is implemented here as functions that are called
 //! from the main entry point.
 
-use super::config::CLIConfig;
 use super::git::GitRepo;
-use super::utils::{expand_home, pluralize};
+use super::utils::pluralize;
 use anyhow::{Context, Result};
 use bnotes::{BNotes, RealStorage};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+
+/// Validate that notes directory exists
+fn validate_notes_dir(notes_dir: &Path) -> Result<()> {
+    if !notes_dir.exists() {
+        anyhow::bail!(
+            "Notes directory does not exist: {}\n\nSet BNOTES_DIR environment variable or use --notes-dir flag to specify a different location.",
+            notes_dir.display()
+        );
+    }
+
+    if !notes_dir.is_dir() {
+        anyhow::bail!(
+            "Notes path is not a directory: {}",
+            notes_dir.display()
+        );
+    }
+
+    Ok(())
+}
 
 // ============================================================================
 // Core Commands
 // ============================================================================
 
-pub fn search(config_path: Option<PathBuf>, query: &str) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn search(notes_dir: &Path, query: &str) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let matches = bnotes.search(query)?;
@@ -59,10 +77,12 @@ pub fn search(config_path: Option<PathBuf>, query: &str) -> Result<()> {
 }
 
 pub fn new(
-    config_path: Option<PathBuf>,
+    notes_dir: &Path,
     title: Option<String>,
     template_name: Option<String>,
 ) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+
     // CLI handles prompting for missing title
     let title = if let Some(t) = title {
         t
@@ -82,8 +102,7 @@ pub fn new(
     };
 
     // Call library with complete data
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let note_path = bnotes.create_note(&title, template_name.as_deref())?;
@@ -91,26 +110,26 @@ pub fn new(
     // note_path is relative, join with notes_dir for display
     println!(
         "Created note: {}",
-        cli_config.notes_dir.join(note_path).display()
+        notes_dir.join(note_path).display()
     );
 
     Ok(())
 }
 
-pub fn edit(config_path: Option<PathBuf>, title: &str) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn edit(notes_dir: &Path, title: &str) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let matches = bnotes.find_note_by_title(title)?;
 
     let note_path = match matches.len() {
         0 => anyhow::bail!("Note not found: {}", title),
-        1 => cli_config.notes_dir.join(&matches[0].path),
+        1 => notes_dir.join(&matches[0].path),
         _ => {
             println!("Multiple notes found with title '{}':", title);
             for note in &matches {
-                println!("  - {}", cli_config.notes_dir.join(&note.path).display());
+                println!("  - {}", notes_dir.join(&note.path).display());
             }
             anyhow::bail!("Please be more specific.");
         }
@@ -130,147 +149,13 @@ pub fn edit(config_path: Option<PathBuf>, title: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn init(notes_dir: Option<PathBuf>) -> Result<()> {
-    use std::fs;
+// ============================================================================
+// Health & Maintenance Commands
+// ============================================================================
 
-    let config_path = CLIConfig::default_config_path()?;
-
-    // Check if config already exists
-    if config_path.exists() {
-        print!(
-            "Config file already exists at {}. Overwrite? [y/N] ",
-            config_path.display()
-        );
-        io::stdout().flush()?;
-
-        let mut response = String::new();
-        io::stdin().read_line(&mut response)?;
-
-        if !response.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
-            return Ok(());
-        }
-    }
-
-    // Get notes directory
-    let notes_dir = if let Some(dir) = notes_dir {
-        dir
-    } else {
-        print!("Enter notes directory path (default: ~/notes): ");
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        let input = input.trim();
-
-        if input.is_empty() {
-            expand_home("~/notes")?
-        } else {
-            expand_home(input)?
-        }
-    };
-
-    // Create config directory
-    if let Some(parent) = config_path.parent() {
-        fs::create_dir_all(parent).with_context(|| {
-            format!("Failed to create config directory: {}", parent.display())
-        })?;
-    }
-
-    // Create config
-    let config = CLIConfig {
-        notes_dir: notes_dir.clone(),
-    };
-
-    let config_content =
-        toml::to_string_pretty(&config).context("Failed to serialize config")?;
-
-    fs::write(&config_path, config_content)
-        .with_context(|| format!("Failed to write config file: {}", config_path.display()))?;
-
-    println!("Config created at: {}", config_path.display());
-
-    // Create notes directory
-    fs::create_dir_all(&notes_dir)
-        .with_context(|| format!("Failed to create notes directory: {}", notes_dir.display()))?;
-
-    println!("Notes directory created at: {}", notes_dir.display());
-
-    // Create templates directory
-    let templates_dir = notes_dir.join(".btools/templates");
-    fs::create_dir_all(&templates_dir).with_context(|| {
-        format!(
-            "Failed to create templates directory: {}",
-            templates_dir.display()
-        )
-    })?;
-
-    // Create example template
-    let example_template = templates_dir.join("daily.md");
-    let template_content = r#"---
-tags: [daily]
-created: {{datetime}}
-updated: {{datetime}}
----
-
-# {{title}}
-
-## Tasks
-- [ ]
-
-## Notes
-"#;
-
-    fs::write(&example_template, template_content).with_context(|| {
-        format!(
-            "Failed to create example template: {}",
-            example_template.display()
-        )
-    })?;
-
-    println!("Template directory created at: {}", templates_dir.display());
-    println!("Example template created: daily.md");
-
-    // Create library config in notes directory
-    let bnotes_dir = notes_dir.join(".bnotes");
-    fs::create_dir_all(&bnotes_dir).with_context(|| {
-        format!(
-            "Failed to create .bnotes directory: {}",
-            bnotes_dir.display()
-        )
-    })?;
-
-    let lib_config_path = bnotes_dir.join("config.toml");
-    let lib_config_content = r#"# BNotes Library Configuration
-# This file is stored in your notes directory and can be committed to version control
-
-# Directory for note templates (relative to notes root)
-template_dir = ".btools/templates"
-
-[periodic]
-# Template filenames for periodic notes (in template_dir)
-daily_template = "daily.md"
-weekly_template = "weekly.md"
-quarterly_template = "quarterly.md"
-"#;
-
-    fs::write(&lib_config_path, lib_config_content).with_context(|| {
-        format!(
-            "Failed to create library config: {}",
-            lib_config_path.display()
-        )
-    })?;
-
-    println!("Library config created at: {}", lib_config_path.display());
-    println!("\nbnotes is ready! Try:");
-    println!("  bnotes new \"My First Note\"");
-
-    Ok(())
-}
-
-pub fn doctor(config_path: Option<PathBuf>) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn doctor(notes_dir: &Path) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     // Get note count for display
@@ -355,9 +240,9 @@ pub fn doctor(config_path: Option<PathBuf>) -> Result<()> {
 // Git Commands
 // ============================================================================
 
-pub fn sync(config_path: Option<PathBuf>, message: Option<String>) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let repo = GitRepo::new(cli_config.notes_dir)?;
+pub fn sync(notes_dir: &Path, message: Option<String>) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let repo = GitRepo::new(notes_dir.to_path_buf())?;
 
     // Verify git repository and remote
     repo.check_is_repo()?;
@@ -407,9 +292,9 @@ pub fn sync(config_path: Option<PathBuf>, message: Option<String>) -> Result<()>
     Ok(())
 }
 
-pub fn pull(config_path: Option<PathBuf>) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let repo = GitRepo::new(cli_config.notes_dir)?;
+pub fn pull(notes_dir: &Path) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let repo = GitRepo::new(notes_dir.to_path_buf())?;
 
     // Verify git repository and remote
     repo.check_is_repo()?;
@@ -442,9 +327,9 @@ pub fn pull(config_path: Option<PathBuf>) -> Result<()> {
 // Note Commands
 // ============================================================================
 
-pub fn note_list(config_path: Option<PathBuf>, tags: &[String]) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn note_list(notes_dir: &Path, tags: &[String]) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let notes = bnotes.list_notes(tags)?;
@@ -479,9 +364,9 @@ pub fn note_list(config_path: Option<PathBuf>, tags: &[String]) -> Result<()> {
     Ok(())
 }
 
-pub fn note_show(config_path: Option<PathBuf>, title: &str) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn note_show(notes_dir: &Path, title: &str) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let matches = bnotes.find_note_by_title(title)?;
@@ -503,9 +388,9 @@ pub fn note_show(config_path: Option<PathBuf>, title: &str) -> Result<()> {
     }
 }
 
-pub fn note_links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn note_links(notes_dir: &Path, title: &str) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let matches = bnotes.find_note_by_title(title)?;
@@ -556,9 +441,9 @@ pub fn note_links(config_path: Option<PathBuf>, title: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn note_graph(config_path: Option<PathBuf>) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn note_graph(notes_dir: &Path) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let notes = bnotes.list_notes(&[])?;
@@ -632,12 +517,12 @@ pub fn note_graph(config_path: Option<PathBuf>) -> Result<()> {
 // ============================================================================
 
 pub fn task_list(
-    config_path: Option<PathBuf>,
+    notes_dir: &Path,
     tags: &[String],
     status: Option<String>,
 ) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let tasks = bnotes.list_tasks(tags, status.as_deref())?;
@@ -668,9 +553,9 @@ pub fn task_list(
     Ok(())
 }
 
-pub fn task_show(config_path: Option<PathBuf>, task_id: &str) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+pub fn task_show(notes_dir: &Path, task_id: &str) -> Result<()> {
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     let (task, note) = bnotes.get_task(task_id)?;
@@ -704,12 +589,12 @@ pub enum PeriodicAction {
 
 /// Generic handler for periodic note commands
 pub fn periodic<P: bnotes::PeriodType>(
-    config_path: Option<PathBuf>,
+    notes_dir: &Path,
     action: PeriodicAction,
     template_override: Option<String>,
 ) -> Result<()> {
-    let cli_config = CLIConfig::resolve_and_load(config_path.as_deref())?;
-    let storage = Box::new(RealStorage::new(cli_config.notes_dir.clone()));
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
     match action {
@@ -720,18 +605,18 @@ pub fn periodic<P: bnotes::PeriodType>(
                 P::current()
             };
 
-            periodic_open::<P>(&cli_config, &bnotes, period, template_override)?;
+            periodic_open::<P>(notes_dir, &bnotes, period, template_override)?;
         }
         PeriodicAction::List => {
             periodic_list::<P>(&bnotes)?;
         }
         PeriodicAction::Prev => {
             let note_path = bnotes.navigate_periodic::<P>("prev", template_override.as_deref())?;
-            launch_editor(&cli_config, &note_path)?;
+            launch_editor(notes_dir, &note_path)?;
         }
         PeriodicAction::Next => {
             let note_path = bnotes.navigate_periodic::<P>("next", template_override.as_deref())?;
-            launch_editor(&cli_config, &note_path)?;
+            launch_editor(notes_dir, &note_path)?;
         }
     }
 
@@ -739,13 +624,13 @@ pub fn periodic<P: bnotes::PeriodType>(
 }
 
 fn periodic_open<P: bnotes::PeriodType>(
-    cli_config: &CLIConfig,
+    notes_dir: &Path,
     bnotes: &bnotes::BNotes,
     period: P,
     template_override: Option<String>,
 ) -> Result<()> {
     let note_path = PathBuf::from(period.filename());
-    let full_path = cli_config.notes_dir.join(&note_path);
+    let full_path = notes_dir.join(&note_path);
 
     // If note doesn't exist, prompt to create
     if !full_path.exists() {
@@ -773,7 +658,7 @@ fn periodic_open<P: bnotes::PeriodType>(
         bnotes.open_periodic(period, template_override.as_deref())?;
     }
 
-    launch_editor(cli_config, &note_path)?;
+    launch_editor(notes_dir, &note_path)?;
     Ok(())
 }
 
@@ -792,8 +677,8 @@ fn periodic_list<P: bnotes::PeriodType>(bnotes: &bnotes::BNotes) -> Result<()> {
     Ok(())
 }
 
-fn launch_editor(cli_config: &CLIConfig, note_path: &PathBuf) -> Result<()> {
-    let full_path = cli_config.notes_dir.join(note_path);
+fn launch_editor(notes_dir: &Path, note_path: &PathBuf) -> Result<()> {
+    let full_path = notes_dir.join(note_path);
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
 
     let status = Command::new(&editor)
