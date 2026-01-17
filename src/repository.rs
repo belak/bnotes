@@ -1,153 +1,20 @@
 //! Repository for managing notes
 //!
 //! The Repository provides high-level operations for discovering and querying notes,
-//! using the Storage abstraction for file access.
+//! using the Storage abstraction for file access. This module also includes link
+//! analysis (LinkGraph) and health checking (HealthReport) functionality.
 
+use crate::note::{render_template, Note};
 use crate::storage::Storage;
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
-use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
+use pulldown_cmark::{Event, Parser};
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Frontmatter {
-    pub title: Option<String>,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    pub created: Option<DateTime<Utc>>,
-    pub updated: Option<DateTime<Utc>>,
-}
-
-#[derive(Debug, Clone)]
-pub struct Note {
-    pub path: PathBuf,
-    pub title: String,
-    pub tags: Vec<String>,
-    pub created: Option<DateTime<Utc>>,
-    pub updated: Option<DateTime<Utc>>,
-    pub content: String,
-}
-
-impl Note {
-    /// Parse a note from content
-    pub fn parse(path: &Path, content: &str) -> Result<Self> {
-        let (frontmatter, body) = Self::extract_frontmatter(content)?;
-
-        // Determine title: frontmatter > first H1 > filename
-        let title = frontmatter
-            .as_ref()
-            .and_then(|fm| fm.title.clone())
-            .or_else(|| Self::extract_first_h1(&body))
-            .unwrap_or_else(|| {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Untitled")
-                    .to_string()
-            });
-
-        let tags = frontmatter
-            .as_ref()
-            .map(|fm| fm.tags.clone())
-            .unwrap_or_default();
-
-        let created = frontmatter.as_ref().and_then(|fm| fm.created);
-        let updated = frontmatter.as_ref().and_then(|fm| fm.updated);
-
-        Ok(Self {
-            path: path.to_path_buf(),
-            title,
-            tags,
-            created,
-            updated,
-            content: content.to_string(),
-        })
-    }
-
-    /// Extract frontmatter and body from content using pulldown-cmark's built-in parsing
-    fn extract_frontmatter(content: &str) -> Result<(Option<Frontmatter>, String)> {
-        let mut options = Options::empty();
-        options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
-
-        let parser = Parser::new_ext(content, options);
-        let mut in_metadata = false;
-        let mut yaml_content = String::new();
-        let mut found_metadata = false;
-
-        for event in parser {
-            match event {
-                Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                    in_metadata = true;
-                    found_metadata = true;
-                }
-                Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                    in_metadata = false;
-                }
-                Event::Text(text) if in_metadata => {
-                    yaml_content.push_str(&text);
-                }
-                _ => {}
-            }
-        }
-
-        let frontmatter = if found_metadata && !yaml_content.is_empty() {
-            match serde_yaml::from_str::<Frontmatter>(&yaml_content) {
-                Ok(fm) => Some(fm),
-                Err(e) => {
-                    // Log warning but continue
-                    eprintln!("Warning: Failed to parse frontmatter: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
-
-        // Extract body by removing the frontmatter block from the original content
-        let body = if found_metadata {
-            // Find the end of the frontmatter block in the original content
-            if let Some(end_pos) = content.find("\n---\n").or_else(|| content.find("\n---")) {
-                content[end_pos + 4..].trim_start().to_string()
-            } else {
-                content.to_string()
-            }
-        } else {
-            content.to_string()
-        };
-
-        Ok((frontmatter, body))
-    }
-
-    /// Extract the first H1 heading from markdown
-    fn extract_first_h1(content: &str) -> Option<String> {
-        let parser = Parser::new(content);
-        let mut in_h1 = false;
-        let mut h1_text = String::new();
-
-        for event in parser {
-            match event {
-                Event::Start(Tag::Heading {
-                    level: pulldown_cmark::HeadingLevel::H1,
-                    ..
-                }) => {
-                    in_h1 = true;
-                }
-                Event::End(TagEnd::Heading(pulldown_cmark::HeadingLevel::H1)) => {
-                    if !h1_text.is_empty() {
-                        return Some(h1_text);
-                    }
-                    in_h1 = false;
-                }
-                Event::Text(text) if in_h1 => {
-                    h1_text.push_str(&text);
-                }
-                _ => {}
-            }
-        }
-
-        None
-    }
-}
+// ============================================================================
+// Repository
+// ============================================================================
 
 pub struct Repository {
     pub(crate) storage: Box<dyn Storage>,
@@ -314,14 +181,464 @@ updated: {}
     }
 }
 
-/// Render a template by replacing placeholders
-pub(crate) fn render_template(template_content: &str, title: &str) -> String {
-    let now = Utc::now();
-    let date = now.format("%Y-%m-%d").to_string();
-    let datetime = now.to_rfc3339();
+// ============================================================================
+// LinkGraph
+// ============================================================================
 
-    template_content
-        .replace("{{title}}", title)
-        .replace("{{date}}", &date)
-        .replace("{{datetime}}", &datetime)
+#[derive(Debug, Clone)]
+pub struct LinkGraph {
+    /// Map from note title to set of titles it links to (outbound)
+    pub outbound: HashMap<String, HashSet<String>>,
+    /// Map from note title to set of titles that link to it (inbound)
+    pub inbound: HashMap<String, HashSet<String>>,
+}
+
+impl Default for LinkGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LinkGraph {
+    pub fn new() -> Self {
+        Self {
+            outbound: HashMap::new(),
+            inbound: HashMap::new(),
+        }
+    }
+
+    /// Build a link graph from a collection of notes
+    pub fn build(notes: &[Note]) -> Self {
+        let mut graph = Self::new();
+
+        // Create title -> note mapping for resolving links
+        let title_map: HashMap<String, &Note> = notes
+            .iter()
+            .map(|n| (n.title.to_lowercase(), n))
+            .collect();
+
+        for note in notes {
+            let links = extract_wiki_links(&note.content);
+            let note_title = note.title.clone();
+
+            // Initialize outbound set for this note
+            graph
+                .outbound
+                .entry(note_title.clone())
+                .or_default();
+
+            for link_text in links {
+                let link_lower = link_text.to_lowercase();
+
+                // Try to resolve the link
+                if title_map.contains_key(&link_lower) {
+                    // Add to outbound links
+                    graph
+                        .outbound
+                        .entry(note_title.clone())
+                        .or_default()
+                        .insert(link_text.clone());
+
+                    // Add to inbound links for the target
+                    graph
+                        .inbound
+                        .entry(link_text)
+                        .or_default()
+                        .insert(note_title.clone());
+                }
+            }
+        }
+
+        graph
+    }
+
+    /// Get notes that have no incoming or outgoing links
+    pub fn orphaned_notes(&self, all_note_titles: &[String]) -> Vec<String> {
+        all_note_titles
+            .iter()
+            .filter(|title| {
+                let has_outbound = self
+                    .outbound
+                    .get(*title)
+                    .map(|set| !set.is_empty())
+                    .unwrap_or(false);
+
+                let has_inbound = self
+                    .inbound
+                    .get(*title)
+                    .map(|set| !set.is_empty())
+                    .unwrap_or(false);
+
+                !has_outbound && !has_inbound
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Find broken links (links to non-existent notes)
+    pub fn broken_links(&self, notes: &[Note]) -> HashMap<String, Vec<String>> {
+        let title_set: HashSet<String> = notes
+            .iter()
+            .map(|n| n.title.to_lowercase())
+            .collect();
+
+        let mut broken = HashMap::new();
+
+        for note in notes {
+            let links = extract_wiki_links(&note.content);
+            let broken_in_note: Vec<String> = links
+                .into_iter()
+                .filter(|link| !title_set.contains(&link.to_lowercase()))
+                .collect();
+
+            if !broken_in_note.is_empty() {
+                broken.insert(note.title.clone(), broken_in_note);
+            }
+        }
+
+        broken
+    }
+}
+
+/// Extract wiki-style links from markdown content
+///
+/// Parses markdown using pulldown-cmark and extracts [[wiki link]] patterns
+/// from text events. Wiki links are not standard markdown, so they appear
+/// as plain text in the event stream.
+pub(crate) fn extract_wiki_links(content: &str) -> Vec<String> {
+    let parser = Parser::new(content);
+    let mut links = Vec::new();
+    let mut accumulated_text = String::new();
+
+    for event in parser {
+        match event {
+            Event::Text(text) => {
+                // Accumulate text to handle wiki links that might be split across events
+                accumulated_text.push_str(text.as_ref());
+            }
+            Event::Code(text) => {
+                // Also check code spans for wiki links
+                accumulated_text.push_str(text.as_ref());
+            }
+            // When we hit a non-text event, process accumulated text and reset
+            _ => {
+                if !accumulated_text.is_empty() {
+                    extract_wiki_links_from_text(&accumulated_text, &mut links);
+                    accumulated_text.clear();
+                }
+            }
+        }
+    }
+
+    // Process any remaining accumulated text
+    if !accumulated_text.is_empty() {
+        extract_wiki_links_from_text(&accumulated_text, &mut links);
+    }
+
+    links
+}
+
+/// Helper function to extract wiki links from a text string
+fn extract_wiki_links_from_text(text: &str, links: &mut Vec<String>) {
+    let mut start = 0;
+
+    while let Some(begin) = text[start..].find("[[") {
+        let begin = start + begin;
+        if let Some(end) = text[begin + 2..].find("]]") {
+            let end = begin + 2 + end;
+            let link_text = &text[begin + 2..end];
+            links.push(link_text.to_string());
+            start = end + 2;
+        } else {
+            break;
+        }
+    }
+}
+
+// ============================================================================
+// HealthReport
+// ============================================================================
+
+/// Results of a health check operation
+#[derive(Debug, Clone)]
+pub struct HealthReport {
+    /// Broken wiki links: note title -> list of broken link targets
+    pub broken_links: HashMap<String, Vec<String>>,
+    /// Notes without any tags
+    pub notes_without_tags: Vec<String>,
+    /// Notes missing frontmatter (no tags, no dates)
+    pub notes_without_frontmatter: Vec<String>,
+    /// Duplicate titles: lowercase title -> list of file paths
+    pub duplicate_titles: HashMap<String, Vec<String>>,
+    /// Orphaned notes (no links and no tags)
+    pub orphaned_notes: Vec<String>,
+}
+
+impl HealthReport {
+    /// Check if the report has any issues
+    pub fn has_issues(&self) -> bool {
+        !self.broken_links.is_empty()
+            || !self.notes_without_tags.is_empty()
+            || !self.notes_without_frontmatter.is_empty()
+            || !self.duplicate_titles.is_empty()
+            || !self.orphaned_notes.is_empty()
+    }
+
+    /// Count total number of issues
+    pub fn issue_count(&self) -> usize {
+        self.broken_links.len()
+            + self.notes_without_tags.len()
+            + self.notes_without_frontmatter.len()
+            + self.duplicate_titles.len()
+            + self.orphaned_notes.len()
+    }
+}
+
+/// Run health checks on a collection of notes
+pub(crate) fn check_health(notes: &[Note]) -> HealthReport {
+    let graph = LinkGraph::build(notes);
+
+    // Check for broken wiki links
+    let broken_links = graph.broken_links(notes);
+
+    // Check for notes without tags
+    let notes_without_tags: Vec<String> = notes
+        .iter()
+        .filter(|n| n.tags.is_empty())
+        .map(|n| n.title.clone())
+        .collect();
+
+    // Check for notes missing frontmatter
+    let notes_without_frontmatter: Vec<String> = notes
+        .iter()
+        .filter(|n| n.tags.is_empty() && n.created.is_none() && n.updated.is_none())
+        .map(|n| n.title.clone())
+        .collect();
+
+    // Check for multiple notes with the same title
+    let mut title_counts: HashMap<String, Vec<String>> = HashMap::new();
+    for note in notes {
+        title_counts
+            .entry(note.title.to_lowercase())
+            .or_default()
+            .push(note.path.display().to_string());
+    }
+
+    let duplicate_titles: HashMap<String, Vec<String>> = title_counts
+        .into_iter()
+        .filter(|(_, paths)| paths.len() > 1)
+        .collect();
+
+    // Check for orphaned notes (no links and no tags)
+    let all_titles: Vec<String> = notes.iter().map(|n| n.title.clone()).collect();
+    let orphaned = graph.orphaned_notes(&all_titles);
+
+    let orphaned_notes: Vec<String> = orphaned
+        .into_iter()
+        .filter(|title| {
+            notes
+                .iter()
+                .find(|n| &n.title == title)
+                .map(|n| n.tags.is_empty())
+                .unwrap_or(true)
+        })
+        .collect();
+
+    HealthReport {
+        broken_links,
+        notes_without_tags,
+        notes_without_frontmatter,
+        duplicate_titles,
+        orphaned_notes,
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::{MemoryStorage, Storage};
+
+    #[test]
+    fn test_extract_wiki_links() {
+        let content = r#"
+# My Note
+
+See also [[Other Note]] and [[Another Note]].
+
+More content with [[Third Link]].
+"#;
+
+        let links = extract_wiki_links(content);
+        assert_eq!(links.len(), 3);
+        assert!(links.contains(&"Other Note".to_string()));
+        assert!(links.contains(&"Another Note".to_string()));
+        assert!(links.contains(&"Third Link".to_string()));
+    }
+
+    #[test]
+    fn test_link_graph() {
+        let note1 = Note::parse(
+            Path::new("note1.md"),
+            r#"
+# Note One
+
+Links to [[Note Two]].
+"#,
+        )
+        .unwrap();
+
+        let note2 = Note::parse(
+            Path::new("note2.md"),
+            r#"
+# Note Two
+
+Links to [[Note One]] and [[Note Three]].
+"#,
+        )
+        .unwrap();
+
+        let note3 = Note::parse(Path::new("note3.md"), "# Note Three\n\nNo links.").unwrap();
+
+        let notes = vec![note1, note2, note3];
+        let graph = LinkGraph::build(&notes);
+
+        // Note One links to Note Two
+        assert!(graph
+            .outbound
+            .get("Note One")
+            .unwrap()
+            .contains("Note Two"));
+
+        // Note Two is linked from Note One
+        assert!(graph.inbound.get("Note Two").unwrap().contains("Note One"));
+
+        // Note Two links to Note One and Note Three
+        assert_eq!(graph.outbound.get("Note Two").unwrap().len(), 2);
+
+        // Note Three has no outbound links
+        assert!(graph
+            .outbound
+            .get("Note Three")
+            .unwrap_or(&HashSet::new())
+            .is_empty());
+    }
+
+    #[test]
+    fn test_health_check_no_issues() {
+        let storage = Box::new(MemoryStorage::new());
+        storage
+            .write(
+                Path::new("note1.md"),
+                r#"---
+tags: [test]
+---
+
+# Note 1
+
+Content with [[Note 2]] link"#,
+            )
+            .unwrap();
+        storage
+            .write(
+                Path::new("note2.md"),
+                r#"---
+tags: [test]
+---
+
+# Note 2
+
+Content"#,
+            )
+            .unwrap();
+
+        let notes = vec![
+            Note::parse(Path::new("note1.md"), &storage.read_to_string(Path::new("note1.md")).unwrap()).unwrap(),
+            Note::parse(Path::new("note2.md"), &storage.read_to_string(Path::new("note2.md")).unwrap()).unwrap(),
+        ];
+
+        let report = check_health(&notes);
+        assert!(!report.has_issues());
+        assert_eq!(report.issue_count(), 0);
+    }
+
+    #[test]
+    fn test_health_check_broken_links() {
+        let storage = Box::new(MemoryStorage::new());
+        storage
+            .write(
+                Path::new("note1.md"),
+                r#"---
+tags: [test]
+---
+
+# Note 1
+
+Content with [[Missing Note]] link"#,
+            )
+            .unwrap();
+
+        let notes = vec![
+            Note::parse(Path::new("note1.md"), &storage.read_to_string(Path::new("note1.md")).unwrap()).unwrap(),
+        ];
+
+        let report = check_health(&notes);
+        assert!(report.has_issues());
+        assert_eq!(report.broken_links.len(), 1);
+        assert!(report.broken_links.contains_key("Note 1"));
+    }
+
+    #[test]
+    fn test_health_check_missing_frontmatter() {
+        let storage = Box::new(MemoryStorage::new());
+        storage
+            .write(Path::new("note1.md"), "# Note 1\n\nContent without frontmatter")
+            .unwrap();
+
+        let notes = vec![
+            Note::parse(Path::new("note1.md"), &storage.read_to_string(Path::new("note1.md")).unwrap()).unwrap(),
+        ];
+
+        let report = check_health(&notes);
+        assert!(report.has_issues());
+        assert_eq!(report.notes_without_frontmatter.len(), 1);
+        assert_eq!(report.notes_without_tags.len(), 1);
+    }
+
+    #[test]
+    fn test_health_check_duplicate_titles() {
+        let storage = Box::new(MemoryStorage::new());
+        storage
+            .write(
+                Path::new("note1.md"),
+                r#"---
+tags: [test]
+---
+
+# Same Title"#,
+            )
+            .unwrap();
+        storage
+            .write(
+                Path::new("subfolder/note2.md"),
+                r#"---
+tags: [test]
+---
+
+# Same Title"#,
+            )
+            .unwrap();
+
+        let notes = vec![
+            Note::parse(Path::new("note1.md"), &storage.read_to_string(Path::new("note1.md")).unwrap()).unwrap(),
+            Note::parse(Path::new("subfolder/note2.md"), &storage.read_to_string(Path::new("subfolder/note2.md")).unwrap()).unwrap(),
+        ];
+
+        let report = check_health(&notes);
+        assert!(report.has_issues());
+        assert_eq!(report.duplicate_titles.len(), 1);
+    }
 }

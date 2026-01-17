@@ -1,11 +1,13 @@
-mod cli_config;
-mod commands;
+mod cli;
 mod git;
-mod util;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+
+// ============================================================================
+// CLI Argument Parsing
+// ============================================================================
 
 #[derive(Parser)]
 #[command(name = "bnotes")]
@@ -170,121 +172,134 @@ enum PeriodicSubcommands {
     Next,
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
+// ============================================================================
+// Main Entry Point
+// ============================================================================
 
-    match cli.command {
+fn main() -> Result<()> {
+    let cli_args = Cli::parse();
+
+    match cli_args.command {
         Commands::Search { query } => {
-            commands::search::run(cli.config, &query)?;
+            cli::commands::search(cli_args.config, &query)?;
         }
         Commands::New { title, template } => {
-            commands::new::run(cli.config, title, template)?;
+            cli::commands::new(cli_args.config, title, template)?;
         }
         Commands::Edit { title } => {
-            commands::edit::run(cli.config, &title)?;
+            cli::commands::edit(cli_args.config, &title)?;
         }
         Commands::Tasks => {
-            commands::task::list(cli.config, &[], Some("open".to_string()))?;
+            cli::commands::task_list(cli_args.config, &[], Some("open".to_string()))?;
         }
         Commands::Init { notes_dir } => {
-            commands::init::run(notes_dir)?;
+            cli::commands::init(notes_dir)?;
         }
         Commands::Doctor => {
-            commands::doctor::run(cli.config)?;
+            cli::commands::doctor(cli_args.config)?;
         }
         Commands::Sync { message } => {
-            commands::sync::sync(cli.config, message)?;
+            cli::commands::sync(cli_args.config, message)?;
         }
         Commands::Pull => {
-            commands::sync::pull(cli.config)?;
+            cli::commands::pull(cli_args.config)?;
         }
         Commands::Note(note_cmd) => match note_cmd {
             NoteCommands::List { tags } => {
-                commands::note::list(cli.config, &tags)?;
+                cli::commands::note_list(cli_args.config, &tags)?;
             }
             NoteCommands::Show { title } => {
-                commands::note::show(cli.config, &title)?;
+                cli::commands::note_show(cli_args.config, &title)?;
             }
             NoteCommands::Links { title } => {
-                commands::note::links(cli.config, &title)?;
+                cli::commands::note_links(cli_args.config, &title)?;
             }
             NoteCommands::Graph => {
-                commands::note::graph(cli.config)?;
+                cli::commands::note_graph(cli_args.config)?;
             }
         },
         Commands::Task(task_cmd) => match task_cmd {
             TaskCommands::List { tags, status } => {
-                commands::task::list(cli.config, &tags, status)?;
+                cli::commands::task_list(cli_args.config, &tags, status)?;
             }
             TaskCommands::Show { task_id } => {
-                commands::task::show(cli.config, &task_id)?;
+                cli::commands::task_show(cli_args.config, &task_id)?;
             }
         },
-        Commands::Daily { date, template, subcommand } => {
-            use crate::commands::periodic::{handle_periodic, PeriodicAction};
+        Commands::Daily {
+            date,
+            template,
+            subcommand,
+        } => {
             use bnotes::Daily;
 
             let action = if let Some(cmd) = subcommand {
                 match cmd {
-                    PeriodicSubcommands::List => PeriodicAction::List,
-                    PeriodicSubcommands::Prev => PeriodicAction::Prev,
-                    PeriodicSubcommands::Next => PeriodicAction::Next,
+                    PeriodicSubcommands::List => cli::PeriodicAction::List,
+                    PeriodicSubcommands::Prev => cli::PeriodicAction::Prev,
+                    PeriodicSubcommands::Next => cli::PeriodicAction::Next,
                 }
             } else if date.as_deref() == Some("prev") {
-                PeriodicAction::Prev
+                cli::PeriodicAction::Prev
             } else if date.as_deref() == Some("next") {
-                PeriodicAction::Next
+                cli::PeriodicAction::Next
             } else if date.as_deref() == Some("list") {
-                PeriodicAction::List
+                cli::PeriodicAction::List
             } else {
-                PeriodicAction::Open(date)
+                cli::PeriodicAction::Open(date)
             };
 
-            handle_periodic::<Daily>(cli.config, action, template)?;
+            cli::commands::periodic::<Daily>(cli_args.config, action, template)?;
         }
-        Commands::Weekly { date, template, subcommand } => {
-            use crate::commands::periodic::{handle_periodic, PeriodicAction};
+        Commands::Weekly {
+            date,
+            template,
+            subcommand,
+        } => {
             use bnotes::Weekly;
 
             let action = if let Some(cmd) = subcommand {
                 match cmd {
-                    PeriodicSubcommands::List => PeriodicAction::List,
-                    PeriodicSubcommands::Prev => PeriodicAction::Prev,
-                    PeriodicSubcommands::Next => PeriodicAction::Next,
+                    PeriodicSubcommands::List => cli::PeriodicAction::List,
+                    PeriodicSubcommands::Prev => cli::PeriodicAction::Prev,
+                    PeriodicSubcommands::Next => cli::PeriodicAction::Next,
                 }
             } else if date.as_deref() == Some("prev") {
-                PeriodicAction::Prev
+                cli::PeriodicAction::Prev
             } else if date.as_deref() == Some("next") {
-                PeriodicAction::Next
+                cli::PeriodicAction::Next
             } else if date.as_deref() == Some("list") {
-                PeriodicAction::List
+                cli::PeriodicAction::List
             } else {
-                PeriodicAction::Open(date)
+                cli::PeriodicAction::Open(date)
             };
 
-            handle_periodic::<Weekly>(cli.config, action, template)?;
+            cli::commands::periodic::<Weekly>(cli_args.config, action, template)?;
         }
-        Commands::Quarterly { date, template, subcommand } => {
-            use crate::commands::periodic::{handle_periodic, PeriodicAction};
+        Commands::Quarterly {
+            date,
+            template,
+            subcommand,
+        } => {
             use bnotes::Quarterly;
 
             let action = if let Some(cmd) = subcommand {
                 match cmd {
-                    PeriodicSubcommands::List => PeriodicAction::List,
-                    PeriodicSubcommands::Prev => PeriodicAction::Prev,
-                    PeriodicSubcommands::Next => PeriodicAction::Next,
+                    PeriodicSubcommands::List => cli::PeriodicAction::List,
+                    PeriodicSubcommands::Prev => cli::PeriodicAction::Prev,
+                    PeriodicSubcommands::Next => cli::PeriodicAction::Next,
                 }
             } else if date.as_deref() == Some("prev") {
-                PeriodicAction::Prev
+                cli::PeriodicAction::Prev
             } else if date.as_deref() == Some("next") {
-                PeriodicAction::Next
+                cli::PeriodicAction::Next
             } else if date.as_deref() == Some("list") {
-                PeriodicAction::List
+                cli::PeriodicAction::List
             } else {
-                PeriodicAction::Open(date)
+                cli::PeriodicAction::Open(date)
             };
 
-            handle_periodic::<Quarterly>(cli.config, action, template)?;
+            cli::commands::periodic::<Quarterly>(cli_args.config, action, template)?;
         }
     }
 

@@ -1,2 +1,5 @@
-/target
+/.beads
+/.claude
+/.direnv
 /.worktrees
+/target

@@ -1,3 +1,5 @@
+//! CLI configuration
+
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -51,8 +53,8 @@ impl CLIConfig {
         let config_dir = if let Ok(xdg_config) = std::env::var("XDG_CONFIG_HOME") {
             PathBuf::from(xdg_config)
         } else {
-            let home = std::env::var("HOME")
-                .context("HOME environment variable not set")?;
+            let home =
+                std::env::var("HOME").context("HOME environment variable not set")?;
             PathBuf::from(home).join(".config")
         };
 

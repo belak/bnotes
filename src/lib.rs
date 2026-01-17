@@ -22,12 +22,10 @@
 //! ```
 
 pub mod config;
-pub mod health;
-pub mod link;
+pub mod note;
 pub mod periodic;
 pub mod repository;
 pub mod storage;
-pub mod task;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -64,12 +62,12 @@ impl BNotes {
     }
 
     /// Search notes by query (case-insensitive substring matching)
-    pub fn search(&self, query: &str) -> Result<Vec<repository::Note>> {
+    pub fn search(&self, query: &str) -> Result<Vec<note::Note>> {
         self.repo.search(query)
     }
 
     /// List all notes, optionally filtered by tags
-    pub fn list_notes(&self, tags: &[String]) -> Result<Vec<repository::Note>> {
+    pub fn list_notes(&self, tags: &[String]) -> Result<Vec<note::Note>> {
         if tags.is_empty() {
             self.repo.discover_notes()
         } else {
@@ -78,7 +76,7 @@ impl BNotes {
     }
 
     /// Find a note by title (case-insensitive)
-    pub fn find_note_by_title(&self, title: &str) -> Result<Vec<repository::Note>> {
+    pub fn find_note_by_title(&self, title: &str) -> Result<Vec<note::Note>> {
         self.repo.find_by_title(title)
     }
 
@@ -87,7 +85,7 @@ impl BNotes {
     /// Returns (outbound_links, inbound_links) where each is a set of note titles
     pub fn get_note_links(&self, title: &str) -> Result<(HashSet<String>, HashSet<String>)> {
         let all_notes = self.repo.discover_notes()?;
-        let graph = link::LinkGraph::build(&all_notes);
+        let graph = repository::LinkGraph::build(&all_notes);
 
         let outbound = graph
             .outbound
@@ -105,9 +103,9 @@ impl BNotes {
     }
 
     /// Get the full link graph for all notes
-    pub fn get_link_graph(&self) -> Result<link::LinkGraph> {
+    pub fn get_link_graph(&self) -> Result<repository::LinkGraph> {
         let all_notes = self.repo.discover_notes()?;
-        Ok(link::LinkGraph::build(&all_notes))
+        Ok(repository::LinkGraph::build(&all_notes))
     }
 
     /// Create a new note with the given title and optional template
@@ -121,7 +119,7 @@ impl BNotes {
     /// List all tasks, optionally filtered by tags and status
     ///
     /// Status can be Some("open"), Some("done"), or None for all tasks
-    pub fn list_tasks(&self, tags: &[String], status: Option<&str>) -> Result<Vec<task::Task>> {
+    pub fn list_tasks(&self, tags: &[String], status: Option<&str>) -> Result<Vec<note::Task>> {
         // Get notes, optionally filtered by tags
         let notes = if tags.is_empty() {
             self.repo.discover_notes()?
@@ -130,7 +128,7 @@ impl BNotes {
         };
 
         // Extract tasks from all notes
-        let mut tasks = task::extract_tasks_from_notes(&notes);
+        let mut tasks = note::extract_tasks_from_notes(&notes);
 
         // Filter by status if specified
         if let Some(status_filter) = status {
@@ -156,7 +154,7 @@ impl BNotes {
     /// Get a specific task by its ID (format: "filename#index")
     ///
     /// Returns (task, note) tuple
-    pub fn get_task(&self, task_id: &str) -> Result<(task::Task, repository::Note)> {
+    pub fn get_task(&self, task_id: &str) -> Result<(note::Task, note::Note)> {
         // Parse task ID (format: "filename#index")
         let parts: Vec<&str> = task_id.split('#').collect();
         if parts.len() != 2 {
@@ -182,7 +180,7 @@ impl BNotes {
             .ok_or_else(|| anyhow::anyhow!("Note not found: {}", filename))?;
 
         // Extract tasks from the note
-        let tasks = task::Task::extract_from_note(note);
+        let tasks = note::Task::extract_from_note(note);
 
         // Find the specific task
         let task = tasks
@@ -229,7 +227,7 @@ impl BNotes {
         // Generate content
         let content = if self.repo.storage.exists(&template_path) {
             let template_content = self.repo.storage.read_to_string(&template_path)?;
-            repository::render_template(&template_content, &period.identifier())
+            note::render_template(&template_content, &period.identifier())
         } else {
             // Minimal note with just title
             format!("# {}\n\n", period.identifier())
@@ -288,20 +286,18 @@ impl BNotes {
     ///
     /// Returns a report of potential issues including broken links, missing metadata,
     /// duplicate titles, and orphaned notes
-    pub fn check_health(&self) -> Result<health::HealthReport> {
+    pub fn check_health(&self) -> Result<repository::HealthReport> {
         let notes = self.repo.discover_notes()?;
-        Ok(health::check_health(&notes))
+        Ok(repository::check_health(&notes))
     }
 }
 
 // Re-export main types for convenience
 pub use config::{LibraryConfig, PeriodicConfig};
-pub use health::HealthReport;
-pub use link::LinkGraph;
+pub use note::{Frontmatter, Note, Task};
 pub use periodic::{Daily, PeriodType, Quarterly, Weekly};
-pub use repository::{Frontmatter, Note};
+pub use repository::{HealthReport, LinkGraph};
 pub use storage::{MemoryStorage, RealStorage, Storage};
-pub use task::Task;
 
 #[cfg(test)]
 mod tests {
