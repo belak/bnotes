@@ -56,11 +56,14 @@ git push -u origin main
 
 The config file is located at `~/.config/bnotes/config.toml` (or `$BNOTES_CONFIG` if set):
 
-| section | option       | default     | description                                                               |
-| ------- | ------------ | ----------- | ------------------------------------------------------------------------- |
-| default | notes_dir    | none        | Path to your notes directory                                              |
-| default | editor       | $EDITOR/vim | Which editor to open with bnotes edit                                     |
-| default | template_dir | .templates  | Path to the templates directory, either absolute or relative to notes_dir |
+| section  | option             | default     | description                                                               |
+| -------- | ------------------ | ----------- | ------------------------------------------------------------------------- |
+| default  | notes_dir          | none        | Path to your notes directory                                              |
+| default  | editor             | $EDITOR/vim | Which editor to open with bnotes edit                                     |
+| default  | template_dir       | .templates  | Path to the templates directory, either absolute or relative to notes_dir |
+| periodic | daily_template     | daily.md    | Template to use for daily notes                                           |
+| periodic | weekly_template    | weekly.md   | Template to use for weekly notes                                          |
+| periodic | quarterly_template | quarterly.md | Template to use for quarterly notes                                      |
 
 
 ## Note Format
@@ -94,6 +97,56 @@ updated: {{datetime}}
 ## Notes
 ```
 
+## Periodic Notes
+
+Create and manage daily, weekly, and quarterly notes:
+
+```bash
+# Open today's daily note (creates if needed)
+bnotes daily
+
+# Open specific date's note
+bnotes daily 2026-01-16
+
+# Open current week's note
+bnotes weekly
+
+# Open week containing a specific date
+bnotes weekly 2026-01-15
+
+# Open current quarter
+bnotes quarterly
+
+# Use quarter shortcuts
+bnotes quarterly q1
+
+# Navigate to previous/next periods
+bnotes weekly prev
+bnotes weekly next
+
+# List all periodic notes
+bnotes daily list
+bnotes weekly list
+bnotes quarterly list
+
+# Override template
+bnotes weekly --template custom-weekly
+```
+
+Configure templates in `config.toml`:
+
+```toml
+[periodic]
+daily_template = "daily.md"
+weekly_template = "weekly.md"
+quarterly_template = "quarterly.md"
+```
+
+Periodic notes are regular markdown files with special naming:
+- Daily: `2026-01-16.md`
+- Weekly: `2026-W03.md`
+- Quarterly: `2026-Q1.md`
+
 ## Health Checks
 
 Check for issues in your notes:
@@ -117,6 +170,9 @@ This finds:
 - `bnotes doctor` - Check for issues in notes
 - `bnotes sync` - Sync with git remote (commit, pull, push)
 - `bnotes pull` - Pull changes from git remote
+- `bnotes daily [date|prev|next|list]` - Manage daily notes
+- `bnotes weekly [date|prev|next|list]` - Manage weekly notes
+- `bnotes quarterly [date|prev|next|list]` - Manage quarterly notes
 - `bnotes note list` - List all notes
 - `bnotes note show <title>` - Display a note
 - `bnotes note links <title>` - Show links to/from a note
