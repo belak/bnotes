@@ -49,6 +49,32 @@ pub enum MatchLocation {
 // Repository
 // ============================================================================
 
+/// Extract snippet around a match position with smart word boundaries
+fn extract_snippet(content: &str, match_pos: usize, query_len: usize, context_chars: usize) -> String {
+    let start = match_pos.saturating_sub(context_chars);
+    let end = (match_pos + query_len + context_chars).min(content.len());
+
+    let mut snippet = &content[start..end];
+
+    // Trim to word boundaries (don't cut mid-word)
+    if start > 0 {
+        if let Some(space_pos) = snippet.find(char::is_whitespace) {
+            snippet = &snippet[space_pos..].trim_start();
+        }
+    }
+    if end < content.len() {
+        if let Some(space_pos) = snippet.rfind(char::is_whitespace) {
+            snippet = &snippet[..space_pos].trim_end();
+        }
+    }
+
+    // Add ellipsis indicators
+    let prefix = if start > 0 { "..." } else { "" };
+    let suffix = if end < content.len() { "..." } else { "" };
+
+    format!("{}{}{}", prefix, snippet, suffix)
+}
+
 pub struct Repository {
     pub(crate) storage: Box<dyn Storage>,
 }
@@ -673,5 +699,46 @@ tags: [test]
         let report = check_health(&notes);
         assert!(report.has_issues());
         assert_eq!(report.duplicate_titles.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_snippet() {
+        let content = "This is some longer text with the word project in the middle and more text after";
+        let match_pos = 42; // position of "project"
+        let query_len = 7;
+
+        let snippet = extract_snippet(content, match_pos, query_len, 20);
+
+        // Should have trimmed to word boundaries with ellipsis
+        assert!(snippet.starts_with("..."));
+        assert!(snippet.ends_with("..."));
+        assert!(snippet.contains("project"));
+        assert!(!snippet.contains("This is")); // Too far before
+    }
+
+    #[test]
+    fn test_extract_snippet_at_start() {
+        let content = "project is at the beginning of text";
+        let snippet = extract_snippet(content, 0, 7, 20);
+
+        // No leading ellipsis when at start
+        assert!(!snippet.starts_with("..."));
+        assert!(snippet.starts_with("project"));
+    }
+
+    #[test]
+    fn test_extract_snippet_at_end() {
+        let content = "text with word at the end project";
+        let match_pos = 28;
+        let snippet = extract_snippet(content, match_pos, 7, 20);
+
+        // No trailing ellipsis when at end
+        assert!(!snippet.ends_with("..."));
+        assert!(snippet.ends_with("project"));
     }
 }
