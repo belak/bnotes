@@ -16,6 +16,10 @@ pub fn create_stdout(preference: ColorChoice) -> StandardStream {
     StandardStream::stdout(choice)
 }
 
+pub fn default() -> ColorSpec {
+    ColorSpec::new()
+}
+
 /// Error color: red + bold
 pub fn error() -> ColorSpec {
     let mut spec = ColorSpec::new();

@@ -44,13 +44,12 @@ fn write_with_highlights<W: WriteColor>(
     text: &str,
     query: &str,
     base_color: &termcolor::ColorSpec,
+    highlight_color: &termcolor::ColorSpec,
 ) -> io::Result<()> {
     let query_lower = query.to_lowercase();
     let text_lower = text.to_lowercase();
 
     let mut last_end = 0;
-    let mut bold_spec = termcolor::ColorSpec::new();
-    bold_spec.set_bold(true);
 
     while let Some(pos) = text_lower[last_end..].find(&query_lower) {
         let start = last_end + pos;
@@ -61,7 +60,7 @@ fn write_with_highlights<W: WriteColor>(
         write!(stdout, "{}", &text[last_end..start])?;
 
         // Write match in bold (reset to normal, then bold)
-        stdout.set_color(&bold_spec)?;
+        stdout.set_color(&highlight_color)?;
         write!(stdout, "{}", &text[start..end])?;
 
         last_end = end;
@@ -81,8 +80,12 @@ fn write_tags_with_highlights<W: WriteColor>(
     query: &str,
 ) -> io::Result<()> {
     let query_lower = query.to_lowercase();
-    let default_color = termcolor::ColorSpec::new();
+    let default_color = colors::dim();
 
+    let mut highlight_color = colors::default();
+    highlight_color.set_bold(true);
+
+    stdout.set_color(&default_color)?;
     write!(stdout, " [")?;
 
     for (i, tag) in tags.iter().enumerate() {
@@ -91,7 +94,7 @@ fn write_tags_with_highlights<W: WriteColor>(
         }
 
         if tag.to_lowercase().contains(&query_lower) {
-            write_with_highlights(stdout, tag, query, &default_color)?;
+            write_with_highlights(stdout, tag, query, &default_color, &highlight_color)?;
         } else {
             write!(stdout, "{}", tag)?;
         }
@@ -110,6 +113,13 @@ pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
+    let title_base_color = colors::highlight();
+    let mut title_highlight_color = title_base_color.clone();
+    title_highlight_color.set_bold(true);
+
+    let text_base_color = colors::default();
+    let text_highlight_color = colors::highlight();
+
     let matches = bnotes.search(query)?;
 
     let mut stdout = colors::create_stdout(color);
@@ -121,7 +131,7 @@ pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -
 
     for search_match in &matches {
         // Display title with matched words in bold
-        write_with_highlights(&mut stdout, &search_match.note.title, query, &colors::highlight())?;
+        write_with_highlights(&mut stdout, &search_match.note.title, query, &title_base_color, &title_highlight_color)?;
         stdout.reset()?;
 
         // Show tags with potential highlighting
@@ -160,7 +170,7 @@ pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -
 
                     // Display snippet in dim with bold highlighted matches
                     write!(stdout, "  ")?;
-                    write_with_highlights(&mut stdout, snippet, query, &colors::dim())?;
+                    write_with_highlights(&mut stdout, snippet, query, &text_base_color, &text_highlight_color)?;
                     writeln!(stdout)?;
                     stdout.reset()?;
                 }
