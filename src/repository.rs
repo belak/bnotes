@@ -49,6 +49,18 @@ pub enum MatchLocation {
 // Repository
 // ============================================================================
 
+/// Convert HeadingLevel to numeric level (1-6)
+fn heading_level_to_num(level: &HeadingLevel) -> u8 {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
+}
+
 /// Build map of heading text to breadcrumb path
 fn build_heading_breadcrumbs(content: &str) -> HashMap<String, Vec<String>> {
     let mut breadcrumbs = HashMap::new();
@@ -68,44 +80,23 @@ fn build_heading_breadcrumbs(content: &str) -> HashMap<String, Vec<String>> {
             }
             Event::End(TagEnd::Heading(_)) => {
                 if in_heading && !current_heading_text.is_empty() {
-                    let level_num = match current_heading_level {
-                        HeadingLevel::H1 => 1,
-                        HeadingLevel::H2 => 2,
-                        HeadingLevel::H3 => 3,
-                        HeadingLevel::H4 => 4,
-                        HeadingLevel::H5 => 5,
-                        HeadingLevel::H6 => 6,
-                    };
+                    let level_num = heading_level_to_num(&current_heading_level);
 
                     // Pop headings at same or deeper level
                     heading_stack.retain(|(lvl, _)| {
-                        let stack_level_num = match lvl {
-                            HeadingLevel::H1 => 1,
-                            HeadingLevel::H2 => 2,
-                            HeadingLevel::H3 => 3,
-                            HeadingLevel::H4 => 4,
-                            HeadingLevel::H5 => 5,
-                            HeadingLevel::H6 => 6,
-                        };
+                        let stack_level_num = heading_level_to_num(lvl);
                         stack_level_num < level_num
                     });
 
                     // Format heading with markers
-                    let markers = "#".repeat(level_num);
+                    let markers = "#".repeat(level_num as usize);
                     let formatted = format!("{} {}", markers, current_heading_text.trim());
 
                     // Build breadcrumb path
                     let mut path: Vec<String> = heading_stack.iter()
                         .map(|(lvl, txt)| {
-                            let n = match lvl {
-                                HeadingLevel::H1 => 1,
-                                HeadingLevel::H2 => 2,
-                                HeadingLevel::H3 => 3,
-                                HeadingLevel::H4 => 4,
-                                HeadingLevel::H5 => 5,
-                                HeadingLevel::H6 => 6,
-                            };
-                            format!("{} {}", "#".repeat(n), txt)
+                            let n = heading_level_to_num(lvl);
+                            format!("{} {}", "#".repeat(n as usize), txt)
                         })
                         .collect();
                     path.push(formatted.clone());
@@ -847,5 +838,37 @@ More content."#;
         assert_eq!(subsection_path[0], "# Main Heading");
         assert_eq!(subsection_path[1], "## Section One");
         assert_eq!(subsection_path[2], "### Subsection");
+
+        // Section Two should have path from Main
+        let section_two_path = &breadcrumbs["## Section Two"];
+        assert_eq!(section_two_path.len(), 2);
+        assert_eq!(section_two_path[0], "# Main Heading");
+        assert_eq!(section_two_path[1], "## Section Two");
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs_empty() {
+        let markdown = "Just text, no headings.";
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+        assert!(breadcrumbs.is_empty());
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs_single() {
+        let markdown = "# Only Heading\nSome text.";
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+        assert_eq!(breadcrumbs.len(), 1);
+        let path = &breadcrumbs["# Only Heading"];
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0], "# Only Heading");
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs_skipped_levels() {
+        let markdown = "# Main\n### Deep\nText.";
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+        // H3 should still show just under H1 in path
+        let path = &breadcrumbs["### Deep"];
+        assert_eq!(path, &vec!["# Main", "### Deep"]);
     }
 }
