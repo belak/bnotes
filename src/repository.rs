@@ -235,15 +235,15 @@ fn extract_snippet(content: &str, match_pos: usize, query_len: usize, context_ch
     let mut snippet = &content[start..end];
 
     // Trim to word boundaries (don't cut mid-word)
-    if start > 0 {
-        if let Some(space_pos) = snippet.find(char::is_whitespace) {
-            snippet = &snippet[space_pos..].trim_start();
-        }
+    if start > 0
+        && let Some(space_pos) = snippet.find(char::is_whitespace)
+    {
+        snippet = snippet[space_pos..].trim_start();
     }
-    if end < content.len() {
-        if let Some(space_pos) = snippet.rfind(char::is_whitespace) {
-            snippet = &snippet[..space_pos].trim_end();
-        }
+    if end < content.len()
+        && let Some(space_pos) = snippet.rfind(char::is_whitespace)
+    {
+        snippet = snippet[..space_pos].trim_end();
     }
 
     // Add ellipsis indicators

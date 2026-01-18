@@ -33,10 +33,79 @@ fn validate_notes_dir(notes_dir: &Path) -> Result<()> {
 }
 
 // ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Write text with highlighted query matches using proper termcolor API
+///
+/// Matches are written in bold, text segments inherit the current color state
+fn write_with_highlights<W: WriteColor>(
+    stdout: &mut W,
+    text: &str,
+    query: &str,
+    base_color: &termcolor::ColorSpec,
+) -> io::Result<()> {
+    let query_lower = query.to_lowercase();
+    let text_lower = text.to_lowercase();
+
+    let mut last_end = 0;
+    let mut bold_spec = termcolor::ColorSpec::new();
+    bold_spec.set_bold(true);
+
+    while let Some(pos) = text_lower[last_end..].find(&query_lower) {
+        let start = last_end + pos;
+        let end = start + query.len();
+
+        // Write text before match with base color
+        stdout.set_color(base_color)?;
+        write!(stdout, "{}", &text[last_end..start])?;
+
+        // Write match in bold (reset to normal, then bold)
+        stdout.set_color(&bold_spec)?;
+        write!(stdout, "{}", &text[start..end])?;
+
+        last_end = end;
+    }
+
+    // Write remaining text with base color
+    stdout.set_color(base_color)?;
+    write!(stdout, "{}", &text[last_end..])?;
+
+    Ok(())
+}
+
+/// Write tags with highlighted query matches
+fn write_tags_with_highlights<W: WriteColor>(
+    stdout: &mut W,
+    tags: &[String],
+    query: &str,
+) -> io::Result<()> {
+    let query_lower = query.to_lowercase();
+    let default_color = termcolor::ColorSpec::new();
+
+    write!(stdout, " [")?;
+
+    for (i, tag) in tags.iter().enumerate() {
+        if i > 0 {
+            write!(stdout, ", ")?;
+        }
+
+        if tag.to_lowercase().contains(&query_lower) {
+            write_with_highlights(stdout, tag, query, &default_color)?;
+        } else {
+            write!(stdout, "{}", tag)?;
+        }
+    }
+
+    write!(stdout, "]")?;
+    Ok(())
+}
+
+// ============================================================================
 // Core Commands
 // ============================================================================
 
-pub fn search(notes_dir: &Path, query: &str, color: ColorChoice) -> Result<()> {
+pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -> Result<()> {
     validate_notes_dir(notes_dir)?;
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
@@ -50,27 +119,65 @@ pub fn search(notes_dir: &Path, query: &str, color: ColorChoice) -> Result<()> {
         return Ok(());
     }
 
-    for note in &matches {
-        // Note path in cyan
-        stdout.set_color(&colors::highlight())?;
-        writeln!(stdout, "{}", note.title)?;
+    for search_match in &matches {
+        // Display title with matched words in bold
+        write_with_highlights(&mut stdout, &search_match.note.title, query, &colors::highlight())?;
         stdout.reset()?;
 
-        // Show a snippet of content containing the query
-        let query_lower = query.to_lowercase();
-        let content_lower = note.content.to_lowercase();
+        // Show tags with potential highlighting
+        if !search_match.note.tags.is_empty() {
+            write_tags_with_highlights(&mut stdout, &search_match.note.tags, query)?;
+            writeln!(stdout)?;
+        } else {
+            writeln!(stdout)?;
+        }
 
-        if let Some(pos) = content_lower.find(&query_lower) {
-            // Show context around the match
-            let start = pos.saturating_sub(50);
-            let end = (pos + query.len() + 50).min(note.content.len());
+        // Apply limit to locations
+        let total_matches = search_match.locations.len();
+        let limited_locations = &search_match.locations[..limit.min(total_matches)];
 
-            let snippet = &note.content[start..end];
-            let snippet = snippet.trim();
+        // Iterate through each MatchLocation and render based on type
+        for location in limited_locations {
+            match location {
+                bnotes::MatchLocation::Title { .. } => {
+                    // Title match is already displayed in title, skip additional output
+                }
+                bnotes::MatchLocation::Tag { .. } => {
+                    // Tag match is already displayed in tags, skip additional output
+                }
+                bnotes::MatchLocation::Content {
+                    breadcrumb,
+                    snippet,
+                    ..
+                } => {
+                    // Display breadcrumb in dim
+                    stdout.set_color(&colors::dim())?;
+                    if breadcrumb.is_empty() {
+                        writeln!(stdout, "  [Document Start]")?;
+                    } else {
+                        writeln!(stdout, "  [{}]", breadcrumb.join(" > "))?;
+                    }
 
-            // Content snippet in dim
+                    // Display snippet in dim with bold highlighted matches
+                    write!(stdout, "  ")?;
+                    write_with_highlights(&mut stdout, snippet, query, &colors::dim())?;
+                    writeln!(stdout)?;
+                    stdout.reset()?;
+                }
+            }
+        }
+
+        // Show truncation message if needed
+        if total_matches > limit {
+            let remaining = total_matches - limit;
             stdout.set_color(&colors::dim())?;
-            writeln!(stdout, "  ... {} ...", snippet)?;
+            writeln!(
+                stdout,
+                "  ({} {} shown, {} more in this note)",
+                limit,
+                pluralize(limit, "match", "matches"),
+                remaining
+            )?;
             stdout.reset()?;
         }
 
@@ -81,7 +188,7 @@ pub fn search(notes_dir: &Path, query: &str, color: ColorChoice) -> Result<()> {
         stdout,
         "Found {} {}",
         matches.len(),
-        pluralize(matches.len(), "match", "matches")
+        pluralize(matches.len(), "note with matches", "notes with matches")
     )?;
 
     Ok(())

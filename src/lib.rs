@@ -16,8 +16,8 @@
 //!
 //! // Search for notes
 //! let results = bnotes.search("rust").unwrap();
-//! for note in results {
-//!     println!("{}", note.title);
+//! for search_match in results {
+//!     println!("{}", search_match.note.title);
 //! }
 //! ```
 
@@ -62,7 +62,7 @@ impl BNotes {
     }
 
     /// Search notes by query (case-insensitive substring matching)
-    pub fn search(&self, query: &str) -> Result<Vec<note::Note>> {
+    pub fn search(&self, query: &str) -> Result<Vec<repository::SearchMatch>> {
         self.repo.search(query)
     }
 
@@ -296,7 +296,7 @@ impl BNotes {
 pub use config::{LibraryConfig, PeriodicConfig};
 pub use note::{Frontmatter, Note, Task};
 pub use periodic::{Daily, PeriodType, Quarterly, Weekly};
-pub use repository::{HealthReport, LinkGraph};
+pub use repository::{HealthReport, LinkGraph, MatchLocation, SearchMatch};
 pub use storage::{MemoryStorage, RealStorage, Storage};
 
 #[cfg(test)]
@@ -338,7 +338,8 @@ mod tests {
         let results = bnotes.search("project").unwrap();
 
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].title, "Work Note");
+        assert_eq!(results[0].note.title, "Work Note");
+        assert!(!results[0].locations.is_empty());
     }
 
     #[test]
