@@ -5,7 +5,7 @@
 //! and working with markdown notes.
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::path::{Path, PathBuf};
@@ -36,12 +36,46 @@ where
     }
 }
 
+/// Custom deserializer for datetime that accepts both RFC3339 and YYYY-MM-DD formats
+fn deserialize_datetime<'de, D>(deserializer: D) -> Result<Option<DateTime<Utc>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error;
+
+    let opt: Option<String> = Option::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(s) => {
+            // Try parsing as RFC3339 first
+            if let Ok(dt) = DateTime::parse_from_rfc3339(&s) {
+                return Ok(Some(dt.with_timezone(&Utc)));
+            }
+
+            // Try parsing as YYYY-MM-DD
+            if let Ok(date) = NaiveDate::parse_from_str(&s, "%Y-%m-%d") {
+                // Convert to DateTime at midnight UTC
+                if let Some(dt) = date.and_hms_opt(0, 0, 0) {
+                    return Ok(Some(Utc.from_utc_datetime(&dt)));
+                }
+            }
+
+            Err(Error::custom(format!(
+                "expected datetime in RFC3339 or YYYY-MM-DD format, got: {}",
+                s
+            )))
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Frontmatter {
     pub title: Option<String>,
     #[serde(default, deserialize_with = "deserialize_tags")]
     pub tags: Vec<String>,
+    #[serde(default, deserialize_with = "deserialize_datetime")]
     pub created: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "deserialize_datetime")]
     pub updated: Option<DateTime<Utc>>,
 }
 
@@ -62,7 +96,7 @@ pub struct Note {
 impl Note {
     /// Parse a note from content
     pub fn parse(path: &Path, content: &str) -> Result<Self> {
-        let (frontmatter, body) = Self::extract_frontmatter(content)?;
+        let (frontmatter, body) = Self::extract_frontmatter(path, content)?;
 
         // Determine title: frontmatter > first H1 > filename
         let title = frontmatter
@@ -95,7 +129,7 @@ impl Note {
     }
 
     /// Extract frontmatter and body from content using pulldown-cmark's built-in parsing
-    fn extract_frontmatter(content: &str) -> Result<(Option<Frontmatter>, String)> {
+    fn extract_frontmatter(path: &Path, content: &str) -> Result<(Option<Frontmatter>, String)> {
         let mut options = Options::empty();
         options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
 
@@ -125,7 +159,7 @@ impl Note {
                 Ok(fm) => Some(fm),
                 Err(e) => {
                     // Log warning but continue
-                    eprintln!("Warning: Failed to parse frontmatter: {}", e);
+                    eprintln!("Warning: Failed to parse frontmatter in {}: {}", path.display(), e);
                     None
                 }
             }
@@ -397,5 +431,85 @@ title: Test Note
 
         let note = Note::parse(Path::new("test.md"), content).unwrap();
         assert_eq!(note.tags, Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_datetime_yyyy_mm_dd_format() {
+        let content = r#"---
+title: Test Note
+created: 2024-01-15
+updated: 2024-02-20
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert!(note.created.is_some());
+        assert!(note.updated.is_some());
+
+        let created = note.created.unwrap();
+        assert_eq!(created.format("%Y-%m-%d").to_string(), "2024-01-15");
+
+        let updated = note.updated.unwrap();
+        assert_eq!(updated.format("%Y-%m-%d").to_string(), "2024-02-20");
+    }
+
+    #[test]
+    fn test_datetime_rfc3339_format() {
+        let content = r#"---
+title: Test Note
+created: 2024-01-15T10:30:00Z
+updated: 2024-02-20T15:45:30Z
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert!(note.created.is_some());
+        assert!(note.updated.is_some());
+
+        let created = note.created.unwrap();
+        assert_eq!(created.format("%Y-%m-%d").to_string(), "2024-01-15");
+
+        let updated = note.updated.unwrap();
+        assert_eq!(updated.format("%Y-%m-%d").to_string(), "2024-02-20");
+    }
+
+    #[test]
+    fn test_datetime_mixed_formats() {
+        let content = r#"---
+title: Test Note
+created: 2024-01-15
+updated: 2024-02-20T15:45:30Z
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert!(note.created.is_some());
+        assert!(note.updated.is_some());
+
+        let created = note.created.unwrap();
+        assert_eq!(created.format("%Y-%m-%d").to_string(), "2024-01-15");
+
+        let updated = note.updated.unwrap();
+        assert_eq!(updated.format("%Y-%m-%d").to_string(), "2024-02-20");
+    }
+
+    #[test]
+    fn test_datetime_missing_fields() {
+        let content = r#"---
+title: Test Note
+---
+
+# Test Note
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        assert!(note.created.is_none());
+        assert!(note.updated.is_none());
     }
 }
