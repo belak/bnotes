@@ -79,8 +79,8 @@ fn find_content_matches(content: &str, query: &str) -> Vec<ContentMatch> {
         // Determine breadcrumb for this position
         let breadcrumb = get_breadcrumb_at_position(&heading_positions, absolute_pos);
 
-        // Extract snippet with original case
-        let snippet = extract_snippet(content, absolute_pos, query.len(), 60);
+        // Extract snippet with original case (full line containing match)
+        let snippet = extract_snippet(content, absolute_pos, query.len());
 
         // Find match positions in snippet for highlighting
         let snippet_lower = snippet.to_lowercase();
@@ -227,30 +227,22 @@ fn build_heading_breadcrumbs(content: &str) -> HashMap<String, Vec<String>> {
     breadcrumbs
 }
 
-/// Extract snippet around a match position with smart word boundaries
-fn extract_snippet(content: &str, match_pos: usize, query_len: usize, context_chars: usize) -> String {
-    let start = match_pos.saturating_sub(context_chars);
-    let end = (match_pos + query_len + context_chars).min(content.len());
+/// Extract the line containing a match position
+fn extract_snippet(content: &str, match_pos: usize, _query_len: usize) -> String {
+    // Find line start (last newline before match, or start of string)
+    let line_start = content[..match_pos]
+        .rfind('\n')
+        .map(|pos| pos + 1) // Start after the newline
+        .unwrap_or(0);
 
-    let mut snippet = &content[start..end];
+    // Find line end (first newline after match, or end of string)
+    let line_end = content[match_pos..]
+        .find('\n')
+        .map(|pos| match_pos + pos)
+        .unwrap_or(content.len());
 
-    // Trim to word boundaries (don't cut mid-word)
-    if start > 0
-        && let Some(space_pos) = snippet.find(char::is_whitespace)
-    {
-        snippet = snippet[space_pos..].trim_start();
-    }
-    if end < content.len()
-        && let Some(space_pos) = snippet.rfind(char::is_whitespace)
-    {
-        snippet = snippet[..space_pos].trim_end();
-    }
-
-    // Add ellipsis indicators
-    let prefix = if start > 0 { "..." } else { "" };
-    let suffix = if end < content.len() { "..." } else { "" };
-
-    format!("{}{}{}", prefix, snippet, suffix)
+    // Extract and trim the line
+    content[line_start..line_end].trim().to_string()
 }
 
 pub struct Repository {
@@ -915,34 +907,43 @@ mod search_tests {
         let match_pos = 42; // position of "project"
         let query_len = 7;
 
-        let snippet = extract_snippet(content, match_pos, query_len, 20);
+        let snippet = extract_snippet(content, match_pos, query_len);
 
-        // Should have trimmed to word boundaries with ellipsis
-        assert!(snippet.starts_with("..."));
-        assert!(snippet.ends_with("..."));
-        assert!(snippet.contains("project"));
-        assert!(!snippet.contains("This is")); // Too far before
+        // Should extract the full line (single line content)
+        assert_eq!(snippet, "This is some longer text with the word project in the middle and more text after");
+    }
+
+    #[test]
+    fn test_extract_snippet_multiline() {
+        let content = "First line with some text\nSecond line has project keyword\nThird line here";
+        let match_pos = 41; // position of "project"
+        let query_len = 7;
+
+        let snippet = extract_snippet(content, match_pos, query_len);
+
+        // Should extract only the line containing the match
+        assert_eq!(snippet, "Second line has project keyword");
+        assert!(!snippet.contains("First line"));
+        assert!(!snippet.contains("Third line"));
     }
 
     #[test]
     fn test_extract_snippet_at_start() {
         let content = "project is at the beginning of text";
-        let snippet = extract_snippet(content, 0, 7, 20);
+        let snippet = extract_snippet(content, 0, 7);
 
-        // No leading ellipsis when at start
-        assert!(!snippet.starts_with("..."));
-        assert!(snippet.starts_with("project"));
+        // Should extract the full line
+        assert_eq!(snippet, "project is at the beginning of text");
     }
 
     #[test]
     fn test_extract_snippet_at_end() {
         let content = "text with word at the end project";
         let match_pos = 28;
-        let snippet = extract_snippet(content, match_pos, 7, 20);
+        let snippet = extract_snippet(content, match_pos, 7);
 
-        // No trailing ellipsis when at end
-        assert!(!snippet.ends_with("..."));
-        assert!(snippet.ends_with("project"));
+        // Should extract the full line
+        assert_eq!(snippet, "text with word at the end project");
     }
 
     #[test]

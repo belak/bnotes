@@ -60,7 +60,7 @@ fn write_with_highlights<W: WriteColor>(
         write!(stdout, "{}", &text[last_end..start])?;
 
         // Write match in bold (reset to normal, then bold)
-        stdout.set_color(&highlight_color)?;
+        stdout.set_color(highlight_color)?;
         write!(stdout, "{}", &text[start..end])?;
 
         last_end = end;
