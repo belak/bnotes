@@ -49,6 +49,98 @@ pub enum MatchLocation {
 // Repository
 // ============================================================================
 
+/// Temporary struct for building content matches
+#[derive(Debug, Clone)]
+struct ContentMatch {
+    breadcrumb: Vec<String>,
+    snippet: String,
+    match_positions: Vec<(usize, usize)>,
+}
+
+/// Find all content matches with position and heading context
+fn find_content_matches(content: &str, query: &str) -> Vec<ContentMatch> {
+    let query_lower = query.to_lowercase();
+    let content_lower = content.to_lowercase();
+    let mut matches = Vec::new();
+
+    // Build heading breadcrumbs
+    let breadcrumb_map = build_heading_breadcrumbs(content);
+
+    // Track current position and active heading
+    let mut char_pos = 0;
+    let mut current_breadcrumb = vec!["Document Start".to_string()];
+    let mut in_heading = false;
+    let mut current_heading_text = String::new();
+    let mut current_heading_level = HeadingLevel::H1;
+
+    let parser = Parser::new(content);
+
+    for event in parser {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => {
+                in_heading = true;
+                current_heading_level = level;
+                current_heading_text.clear();
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                if in_heading && !current_heading_text.is_empty() {
+                    let level_num = heading_level_to_num(&current_heading_level);
+                    let markers = "#".repeat(level_num as usize);
+                    let formatted = format!("{} {}", markers, current_heading_text.trim());
+
+                    // Update current breadcrumb from map
+                    if let Some(breadcrumb) = breadcrumb_map.get(&formatted) {
+                        current_breadcrumb = breadcrumb.clone();
+                    }
+                }
+                in_heading = false;
+            }
+            Event::Text(text) => {
+                if in_heading {
+                    current_heading_text.push_str(&text);
+                } else {
+                    // Search for matches in this text chunk
+                    let text_lower = text.to_lowercase();
+                    let mut search_pos = 0;
+
+                    while let Some(relative_pos) = text_lower[search_pos..].find(&query_lower) {
+                        let absolute_pos = char_pos + search_pos + relative_pos;
+
+                        // Extract snippet
+                        let snippet = extract_snippet(&content_lower, absolute_pos, query.len(), 60);
+
+                        // Find all query occurrences in snippet for highlighting
+                        let snippet_lower = snippet.to_lowercase();
+                        let mut match_positions = Vec::new();
+                        let mut snippet_search_pos = 0;
+
+                        while let Some(pos) = snippet_lower[snippet_search_pos..].find(&query_lower) {
+                            match_positions.push((snippet_search_pos + pos, query.len()));
+                            snippet_search_pos += pos + query.len();
+                        }
+
+                        // Use original content for snippet (preserve case)
+                        let original_snippet = extract_snippet(content, absolute_pos, query.len(), 60);
+
+                        matches.push(ContentMatch {
+                            breadcrumb: current_breadcrumb.clone(),
+                            snippet: original_snippet,
+                            match_positions,
+                        });
+
+                        search_pos += relative_pos + query.len();
+                    }
+
+                    char_pos += text.len();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    matches
+}
+
 /// Convert HeadingLevel to numeric level (1-6)
 fn heading_level_to_num(level: &HeadingLevel) -> u8 {
     match level {
@@ -870,5 +962,28 @@ More content."#;
         // H3 should still show just under H1 in path
         let path = &breadcrumbs["### Deep"];
         assert_eq!(path, &vec!["# Main", "### Deep"]);
+    }
+
+    #[test]
+    fn test_find_content_matches() {
+        let content = r#"# Main
+Some text with project word here.
+
+## Section
+Another project mention.
+
+More project references."#;
+
+        let matches = find_content_matches(content, "project");
+
+        // Should find all 3 matches
+        assert_eq!(matches.len(), 3);
+
+        // First match should be under "# Main"
+        assert_eq!(matches[0].breadcrumb, vec!["# Main"]);
+        assert!(matches[0].snippet.contains("project"));
+
+        // Second match should be under "# Main > ## Section"
+        assert_eq!(matches[1].breadcrumb, vec!["# Main", "## Section"]);
     }
 }
