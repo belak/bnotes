@@ -5,6 +5,7 @@
 //! - Git operations
 //! - Utility functions
 
+pub mod colors;
 pub mod commands;
 pub mod git;
 pub mod utils;

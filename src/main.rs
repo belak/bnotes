@@ -3,6 +3,7 @@ mod cli;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use termcolor::ColorChoice;
 
 // ============================================================================
 // CLI Argument Parsing
@@ -16,6 +17,10 @@ struct Cli {
     /// Notes directory (overrides $BNOTES_DIR)
     #[arg(long, global = true)]
     notes_dir: Option<PathBuf>,
+
+    /// When to use colors (auto, always, never)
+    #[arg(long, global = true, default_value = "auto", value_name = "WHEN")]
+    color: ColorChoice,
 
     #[command(subcommand)]
     command: Commands,
@@ -195,7 +200,7 @@ fn main() -> Result<()> {
 
     match cli_args.command {
         Commands::Search { query } => {
-            cli::commands::search(&notes_dir, &query)?;
+            cli::commands::search(&notes_dir, &query, cli_args.color)?;
         }
         Commands::New { title, template } => {
             cli::commands::new(&notes_dir, title, template)?;
@@ -204,37 +209,37 @@ fn main() -> Result<()> {
             cli::commands::edit(&notes_dir, &title)?;
         }
         Commands::Tasks => {
-            cli::commands::task_list(&notes_dir, &[], Some("open".to_string()))?;
+            cli::commands::task_list(&notes_dir, &[], Some("open".to_string()), cli_args.color)?;
         }
         Commands::Doctor => {
-            cli::commands::doctor(&notes_dir)?;
+            cli::commands::doctor(&notes_dir, cli_args.color)?;
         }
         Commands::Sync { message } => {
-            cli::commands::sync(&notes_dir, message)?;
+            cli::commands::sync(&notes_dir, message, cli_args.color)?;
         }
         Commands::Pull => {
-            cli::commands::pull(&notes_dir)?;
+            cli::commands::pull(&notes_dir, cli_args.color)?;
         }
         Commands::Note(note_cmd) => match note_cmd {
             NoteCommands::List { tags } => {
-                cli::commands::note_list(&notes_dir, &tags)?;
+                cli::commands::note_list(&notes_dir, &tags, cli_args.color)?;
             }
             NoteCommands::Show { title } => {
                 cli::commands::note_show(&notes_dir, &title)?;
             }
             NoteCommands::Links { title } => {
-                cli::commands::note_links(&notes_dir, &title)?;
+                cli::commands::note_links(&notes_dir, &title, cli_args.color)?;
             }
             NoteCommands::Graph => {
-                cli::commands::note_graph(&notes_dir)?;
+                cli::commands::note_graph(&notes_dir, cli_args.color)?;
             }
         },
         Commands::Task(task_cmd) => match task_cmd {
             TaskCommands::List { tags, status } => {
-                cli::commands::task_list(&notes_dir, &tags, status)?;
+                cli::commands::task_list(&notes_dir, &tags, status, cli_args.color)?;
             }
             TaskCommands::Show { task_id } => {
-                cli::commands::task_show(&notes_dir, &task_id)?;
+                cli::commands::task_show(&notes_dir, &task_id, cli_args.color)?;
             }
         },
         Commands::Daily {
