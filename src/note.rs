@@ -83,7 +83,7 @@ pub struct Frontmatter {
 // Note
 // ============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Note {
     pub path: PathBuf,
     pub title: String,

@@ -13,14 +13,16 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Represents a search match with all occurrences in a note
-#[derive(Debug, Clone)]
+///
+/// Note: Contains full note content; acceptable for typical result set sizes
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SearchMatch {
     pub note: Note,
     pub locations: Vec<MatchLocation>,
 }
 
 /// Where a match was found in a note
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum MatchLocation {
     /// Match in note title
     Title {
@@ -38,7 +40,7 @@ pub enum MatchLocation {
         breadcrumb: Vec<String>,
         /// Snippet of content around match
         snippet: String,
-        /// Positions of matches within snippet (start, length)
+        /// Positions of matches within snippet (snippet-relative byte offset, length)
         match_positions: Vec<(usize, usize)>,
     },
 }
