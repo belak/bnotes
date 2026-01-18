@@ -8,7 +8,7 @@ use crate::note::{render_template, Note};
 use crate::storage::Storage;
 use anyhow::{Context, Result};
 use chrono::Utc;
-use pulldown_cmark::{Event, Parser};
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -48,6 +48,84 @@ pub enum MatchLocation {
 // ============================================================================
 // Repository
 // ============================================================================
+
+/// Build map of heading text to breadcrumb path
+fn build_heading_breadcrumbs(content: &str) -> HashMap<String, Vec<String>> {
+    let mut breadcrumbs = HashMap::new();
+    let mut heading_stack: Vec<(HeadingLevel, String)> = Vec::new();
+    let mut current_heading_text = String::new();
+    let mut in_heading = false;
+    let mut current_heading_level = HeadingLevel::H1;
+
+    let parser = Parser::new(content);
+
+    for event in parser {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => {
+                in_heading = true;
+                current_heading_level = level;
+                current_heading_text.clear();
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                if in_heading && !current_heading_text.is_empty() {
+                    let level_num = match current_heading_level {
+                        HeadingLevel::H1 => 1,
+                        HeadingLevel::H2 => 2,
+                        HeadingLevel::H3 => 3,
+                        HeadingLevel::H4 => 4,
+                        HeadingLevel::H5 => 5,
+                        HeadingLevel::H6 => 6,
+                    };
+
+                    // Pop headings at same or deeper level
+                    heading_stack.retain(|(lvl, _)| {
+                        let stack_level_num = match lvl {
+                            HeadingLevel::H1 => 1,
+                            HeadingLevel::H2 => 2,
+                            HeadingLevel::H3 => 3,
+                            HeadingLevel::H4 => 4,
+                            HeadingLevel::H5 => 5,
+                            HeadingLevel::H6 => 6,
+                        };
+                        stack_level_num < level_num
+                    });
+
+                    // Format heading with markers
+                    let markers = "#".repeat(level_num);
+                    let formatted = format!("{} {}", markers, current_heading_text.trim());
+
+                    // Build breadcrumb path
+                    let mut path: Vec<String> = heading_stack.iter()
+                        .map(|(lvl, txt)| {
+                            let n = match lvl {
+                                HeadingLevel::H1 => 1,
+                                HeadingLevel::H2 => 2,
+                                HeadingLevel::H3 => 3,
+                                HeadingLevel::H4 => 4,
+                                HeadingLevel::H5 => 5,
+                                HeadingLevel::H6 => 6,
+                            };
+                            format!("{} {}", "#".repeat(n), txt)
+                        })
+                        .collect();
+                    path.push(formatted.clone());
+
+                    breadcrumbs.insert(formatted.clone(), path.clone());
+                    heading_stack.push((current_heading_level, current_heading_text.trim().to_string()));
+                }
+                in_heading = false;
+            }
+            Event::Text(text) => {
+                if in_heading {
+                    current_heading_text.push_str(&text);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    breadcrumbs
+}
 
 /// Extract snippet around a match position with smart word boundaries
 fn extract_snippet(content: &str, match_pos: usize, query_len: usize, context_chars: usize) -> String {
@@ -740,5 +818,34 @@ mod search_tests {
         // No trailing ellipsis when at end
         assert!(!snippet.ends_with("..."));
         assert!(snippet.ends_with("project"));
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs() {
+        let markdown = r#"# Main Heading
+Some text here.
+
+## Section One
+Content in section one.
+
+### Subsection
+Content in subsection.
+
+## Section Two
+More content."#;
+
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+
+        // Should have entries for each heading
+        assert!(breadcrumbs.contains_key(&"# Main Heading".to_string()));
+        assert!(breadcrumbs.contains_key(&"## Section One".to_string()));
+        assert!(breadcrumbs.contains_key(&"### Subsection".to_string()));
+
+        // Subsection should have full path
+        let subsection_path = &breadcrumbs["### Subsection"];
+        assert_eq!(subsection_path.len(), 3);
+        assert_eq!(subsection_path[0], "# Main Heading");
+        assert_eq!(subsection_path[1], "## Section One");
+        assert_eq!(subsection_path[2], "### Subsection");
     }
 }
