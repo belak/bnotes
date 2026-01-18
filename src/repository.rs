@@ -320,23 +320,48 @@ impl Repository {
     }
 
     /// Search notes by query (case-insensitive substring matching)
-    pub fn search(&self, query: &str) -> Result<Vec<Note>> {
+    pub fn search(&self, query: &str) -> Result<Vec<SearchMatch>> {
         let all_notes = self.discover_notes()?;
         let query_lower = query.to_lowercase();
+        let mut results = Vec::new();
 
-        let matches: Vec<Note> = all_notes
-            .into_iter()
-            .filter(|note| {
-                note.content.to_lowercase().contains(&query_lower)
-                    || note.title.to_lowercase().contains(&query_lower)
-                    || note
-                        .tags
-                        .iter()
-                        .any(|tag| tag.to_lowercase().contains(&query_lower))
-            })
-            .collect();
+        for note in all_notes {
+            let mut locations = Vec::new();
 
-        Ok(matches)
+            // Check title
+            if let Some(pos) = note.title.to_lowercase().find(&query_lower) {
+                locations.push(MatchLocation::Title { position: pos });
+            }
+
+            // Check tags
+            for tag in &note.tags {
+                if tag.to_lowercase().contains(&query_lower) {
+                    locations.push(MatchLocation::Tag {
+                        tag: tag.clone(),
+                    });
+                }
+            }
+
+            // Check content
+            let content_matches = find_content_matches(&note.content, query);
+            for m in content_matches {
+                locations.push(MatchLocation::Content {
+                    breadcrumb: m.breadcrumb,
+                    snippet: m.snippet,
+                    match_positions: m.match_positions,
+                });
+            }
+
+            // If any matches found, add to results
+            if !locations.is_empty() {
+                results.push(SearchMatch {
+                    note,
+                    locations,
+                });
+            }
+        }
+
+        Ok(results)
     }
 
     /// Filter notes by tags
