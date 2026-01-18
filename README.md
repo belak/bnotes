@@ -16,11 +16,12 @@ Unlike heavy note-taking apps, bnotes is simple, fast, and keeps your data in pl
 
 ## Features
 
-- Search across all notes
+- Enhanced search with heading context and match highlighting
 - Basic task discovery with GFM task lists
 - Wiki-style linking between notes (`[[Note Title]]`)
 - Note templates
 - Git synchronization
+- Periodic notes (daily, weekly, quarterly)
 
 ## Installation
 
@@ -72,7 +73,7 @@ Notes are markdown files with optional YAML frontmatter.
 
 ## Templates
 
-Templates are markdown files in your configured template directory (`.templates/` by default). They support the following variables:
+Templates are markdown files in your configured template directory (`.bnotes/templates/` by default). They support the following variables:
 
 - `{{title}}` - The note title
 - `{{date}}` - Current date (ISO format)
@@ -97,41 +98,37 @@ updated: {{datetime}}
 ## Notes
 ```
 
-## Periodic Notes
+## Search
 
-Create and manage daily, weekly, and quarterly notes:
+Enhanced full-text search with heading context and match highlighting:
 
 ```bash
-# Open today's daily note (creates if needed)
-bnotes daily
+# Basic search
+bnotes search project
 
-# Open specific date's note
-bnotes daily 2026-01-16
-
-# Open current week's note
-bnotes weekly
-
-# Open week containing a specific date
-bnotes weekly 2026-01-15
-
-# Open current quarter
-bnotes quarterly
-
-# Use quarter shortcuts
-bnotes quarterly q1
-
-# Navigate to previous/next periods
-bnotes weekly prev
-bnotes weekly next
-
-# List all periodic notes
-bnotes daily list
-bnotes weekly list
-bnotes quarterly list
-
-# Override template
-bnotes weekly --template custom-weekly
+# Limit number of matches per note (default: 3)
+bnotes search project --limit 5
 ```
+
+Search displays:
+- **Heading context**: Shows where matches occur in document structure with breadcrumb trails like `[# Main > ## Section > ### Details]`
+- **Match highlighting**: Matched words appear in bold in titles, tags, and content snippets
+- **Multiple matches**: Shows up to N matches per note (configurable with `--limit`)
+- **Smart snippets**: Extracts context around matches at word boundaries
+
+Example output:
+```
+Project Ideas [planning, notes, project]
+  [# Planning > ## Q1 Goals]
+  ... review the project budget ...
+
+  [# Resources > ## Team]
+  ... the project team meets weekly ...
+
+  (2 matches shown, 1 more in this note)
+```
+
+## Periodic Notes
 
 Configure templates in `config.toml`:
 
@@ -162,7 +159,7 @@ This finds:
 
 ## Commands
 
-- `bnotes search <query>` - Full-text search across all notes
+- `bnotes search <query> [--limit N]` - Full-text search with heading context and highlighting
 - `bnotes new [title]` - Create a new note
 - `bnotes edit <title>` - Open a note in your editor
 - `bnotes tasks` - List open tasks (shortcut)

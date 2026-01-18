@@ -53,6 +53,10 @@ enum Commands {
     Search {
         /// Search query
         query: String,
+
+        /// Maximum matches to show per note
+        #[arg(long, default_value = "3")]
+        limit: usize,
     },
 
     /// Create a new note
@@ -199,8 +203,8 @@ fn main() -> Result<()> {
     let notes_dir = resolve_notes_dir(cli_args.notes_dir)?;
 
     match cli_args.command {
-        Commands::Search { query } => {
-            cli::commands::search(&notes_dir, &query, cli_args.color)?;
+        Commands::Search { query, limit } => {
+            cli::commands::search(&notes_dir, &query, limit, cli_args.color)?;
         }
         Commands::New { title, template } => {
             cli::commands::new(&notes_dir, title, template)?;

@@ -8,13 +8,242 @@ use crate::note::{render_template, Note};
 use crate::storage::Storage;
 use anyhow::{Context, Result};
 use chrono::Utc;
-use pulldown_cmark::{Event, Parser};
+use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+
+/// Represents a search match with all occurrences in a note
+///
+/// Note: Contains full note content; acceptable for typical result set sizes
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct SearchMatch {
+    pub note: Note,
+    pub locations: Vec<MatchLocation>,
+}
+
+/// Where a match was found in a note
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum MatchLocation {
+    /// Match in note title
+    Title {
+        /// Position of match in title
+        position: usize,
+    },
+    /// Match in a tag
+    Tag {
+        /// The tag that matched
+        tag: String,
+    },
+    /// Match in note content
+    Content {
+        /// Heading breadcrumb trail (e.g., ["# Main", "## Section"])
+        breadcrumb: Vec<String>,
+        /// Snippet of content around match
+        snippet: String,
+        /// Positions of matches within snippet (snippet-relative byte offset, length)
+        match_positions: Vec<(usize, usize)>,
+    },
+}
 
 // ============================================================================
 // Repository
 // ============================================================================
+
+/// Temporary struct for building content matches
+#[derive(Debug, Clone)]
+struct ContentMatch {
+    breadcrumb: Vec<String>,
+    snippet: String,
+    match_positions: Vec<(usize, usize)>,
+}
+
+/// Find all content matches with position and heading context
+fn find_content_matches(content: &str, query: &str) -> Vec<ContentMatch> {
+    // Guard against empty query to prevent infinite loop
+    if query.is_empty() {
+        return Vec::new();
+    }
+
+    let query_lower = query.to_lowercase();
+    let content_lower = content.to_lowercase();
+    let mut matches = Vec::new();
+
+    // Build heading position map: for each position, what's the active breadcrumb?
+    let heading_positions = build_heading_positions(content);
+
+    // Find all matches in content
+    let mut search_pos = 0;
+    while let Some(relative_pos) = content_lower[search_pos..].find(&query_lower) {
+        let absolute_pos = search_pos + relative_pos;
+
+        // Determine breadcrumb for this position
+        let breadcrumb = get_breadcrumb_at_position(&heading_positions, absolute_pos);
+
+        // Extract snippet with original case (full line containing match)
+        let snippet = extract_snippet(content, absolute_pos, query.len());
+
+        // Find match positions in snippet for highlighting
+        let snippet_lower = snippet.to_lowercase();
+        let mut match_positions = Vec::new();
+        let mut snippet_pos = 0;
+
+        while let Some(pos) = snippet_lower[snippet_pos..].find(&query_lower) {
+            match_positions.push((snippet_pos + pos, query.len()));
+            snippet_pos += pos + query.len();
+        }
+
+        matches.push(ContentMatch {
+            breadcrumb,
+            snippet,
+            match_positions,
+        });
+
+        search_pos = absolute_pos + query.len();
+    }
+
+    matches
+}
+
+/// Build list of (position, breadcrumb) pairs by parsing headings
+fn build_heading_positions(content: &str) -> Vec<(usize, Vec<String>)> {
+    let mut positions = Vec::new();
+    let mut in_heading = false;
+    let mut heading_text = String::new();
+    let mut heading_level = HeadingLevel::H1;
+
+    let breadcrumb_map = build_heading_breadcrumbs(content);
+    let parser = Parser::new(content);
+
+    for (event, range) in parser.into_offset_iter() {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => {
+                in_heading = true;
+                heading_level = level;
+                heading_text.clear();
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                if in_heading && !heading_text.is_empty() {
+                    let markers = "#".repeat(heading_level_to_num(&heading_level) as usize);
+                    let formatted = format!("{} {}", markers, heading_text.trim());
+
+                    if let Some(breadcrumb) = breadcrumb_map.get(&formatted) {
+                        // Record that from this position onward, we're under this breadcrumb
+                        positions.push((range.end, breadcrumb.clone()));
+                    }
+                }
+                in_heading = false;
+            }
+            Event::Text(text) => {
+                if in_heading {
+                    heading_text.push_str(&text);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    positions
+}
+
+/// Get the active breadcrumb at a given position
+fn get_breadcrumb_at_position(positions: &[(usize, Vec<String>)], pos: usize) -> Vec<String> {
+    // Find the last heading position before or at pos
+    for (heading_pos, breadcrumb) in positions.iter().rev() {
+        if *heading_pos <= pos {
+            return breadcrumb.clone();
+        }
+    }
+
+    // Default if before any heading
+    vec!["Document Start".to_string()]
+}
+
+/// Convert HeadingLevel to numeric level (1-6)
+fn heading_level_to_num(level: &HeadingLevel) -> u8 {
+    match level {
+        HeadingLevel::H1 => 1,
+        HeadingLevel::H2 => 2,
+        HeadingLevel::H3 => 3,
+        HeadingLevel::H4 => 4,
+        HeadingLevel::H5 => 5,
+        HeadingLevel::H6 => 6,
+    }
+}
+
+/// Build map of heading text to breadcrumb path
+fn build_heading_breadcrumbs(content: &str) -> HashMap<String, Vec<String>> {
+    let mut breadcrumbs = HashMap::new();
+    let mut heading_stack: Vec<(HeadingLevel, String)> = Vec::new();
+    let mut current_heading_text = String::new();
+    let mut in_heading = false;
+    let mut current_heading_level = HeadingLevel::H1;
+
+    let parser = Parser::new(content);
+
+    for event in parser {
+        match event {
+            Event::Start(Tag::Heading { level, .. }) => {
+                in_heading = true;
+                current_heading_level = level;
+                current_heading_text.clear();
+            }
+            Event::End(TagEnd::Heading(_)) => {
+                if in_heading && !current_heading_text.is_empty() {
+                    let level_num = heading_level_to_num(&current_heading_level);
+
+                    // Pop headings at same or deeper level
+                    heading_stack.retain(|(lvl, _)| {
+                        let stack_level_num = heading_level_to_num(lvl);
+                        stack_level_num < level_num
+                    });
+
+                    // Format heading with markers
+                    let markers = "#".repeat(level_num as usize);
+                    let formatted = format!("{} {}", markers, current_heading_text.trim());
+
+                    // Build breadcrumb path
+                    let mut path: Vec<String> = heading_stack.iter()
+                        .map(|(lvl, txt)| {
+                            let n = heading_level_to_num(lvl);
+                            format!("{} {}", "#".repeat(n as usize), txt)
+                        })
+                        .collect();
+                    path.push(formatted.clone());
+
+                    breadcrumbs.insert(formatted.clone(), path.clone());
+                    heading_stack.push((current_heading_level, current_heading_text.trim().to_string()));
+                }
+                in_heading = false;
+            }
+            Event::Text(text) => {
+                if in_heading {
+                    current_heading_text.push_str(&text);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    breadcrumbs
+}
+
+/// Extract the line containing a match position
+fn extract_snippet(content: &str, match_pos: usize, _query_len: usize) -> String {
+    // Find line start (last newline before match, or start of string)
+    let line_start = content[..match_pos]
+        .rfind('\n')
+        .map(|pos| pos + 1) // Start after the newline
+        .unwrap_or(0);
+
+    // Find line end (first newline after match, or end of string)
+    let line_end = content[match_pos..]
+        .find('\n')
+        .map(|pos| match_pos + pos)
+        .unwrap_or(content.len());
+
+    // Extract and trim the line
+    content[line_start..line_end].trim().to_string()
+}
 
 pub struct Repository {
     pub(crate) storage: Box<dyn Storage>,
@@ -83,23 +312,48 @@ impl Repository {
     }
 
     /// Search notes by query (case-insensitive substring matching)
-    pub fn search(&self, query: &str) -> Result<Vec<Note>> {
+    pub fn search(&self, query: &str) -> Result<Vec<SearchMatch>> {
         let all_notes = self.discover_notes()?;
         let query_lower = query.to_lowercase();
+        let mut results = Vec::new();
 
-        let matches: Vec<Note> = all_notes
-            .into_iter()
-            .filter(|note| {
-                note.content.to_lowercase().contains(&query_lower)
-                    || note.title.to_lowercase().contains(&query_lower)
-                    || note
-                        .tags
-                        .iter()
-                        .any(|tag| tag.to_lowercase().contains(&query_lower))
-            })
-            .collect();
+        for note in all_notes {
+            let mut locations = Vec::new();
 
-        Ok(matches)
+            // Check title
+            if let Some(pos) = note.title.to_lowercase().find(&query_lower) {
+                locations.push(MatchLocation::Title { position: pos });
+            }
+
+            // Check tags
+            for tag in &note.tags {
+                if tag.to_lowercase().contains(&query_lower) {
+                    locations.push(MatchLocation::Tag {
+                        tag: tag.clone(),
+                    });
+                }
+            }
+
+            // Check content
+            let content_matches = find_content_matches(&note.content, query);
+            for m in content_matches {
+                locations.push(MatchLocation::Content {
+                    breadcrumb: m.breadcrumb,
+                    snippet: m.snippet,
+                    match_positions: m.match_positions,
+                });
+            }
+
+            // If any matches found, add to results
+            if !locations.is_empty() {
+                results.push(SearchMatch {
+                    note,
+                    locations,
+                });
+            }
+        }
+
+        Ok(results)
     }
 
     /// Filter notes by tags
@@ -640,5 +894,153 @@ tags: [test]
         let report = check_health(&notes);
         assert!(report.has_issues());
         assert_eq!(report.duplicate_titles.len(), 1);
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    #[test]
+    fn test_extract_snippet() {
+        let content = "This is some longer text with the word project in the middle and more text after";
+        let match_pos = 42; // position of "project"
+        let query_len = 7;
+
+        let snippet = extract_snippet(content, match_pos, query_len);
+
+        // Should extract the full line (single line content)
+        assert_eq!(snippet, "This is some longer text with the word project in the middle and more text after");
+    }
+
+    #[test]
+    fn test_extract_snippet_multiline() {
+        let content = "First line with some text\nSecond line has project keyword\nThird line here";
+        let match_pos = 41; // position of "project"
+        let query_len = 7;
+
+        let snippet = extract_snippet(content, match_pos, query_len);
+
+        // Should extract only the line containing the match
+        assert_eq!(snippet, "Second line has project keyword");
+        assert!(!snippet.contains("First line"));
+        assert!(!snippet.contains("Third line"));
+    }
+
+    #[test]
+    fn test_extract_snippet_at_start() {
+        let content = "project is at the beginning of text";
+        let snippet = extract_snippet(content, 0, 7);
+
+        // Should extract the full line
+        assert_eq!(snippet, "project is at the beginning of text");
+    }
+
+    #[test]
+    fn test_extract_snippet_at_end() {
+        let content = "text with word at the end project";
+        let match_pos = 28;
+        let snippet = extract_snippet(content, match_pos, 7);
+
+        // Should extract the full line
+        assert_eq!(snippet, "text with word at the end project");
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs() {
+        let markdown = r#"# Main Heading
+Some text here.
+
+## Section One
+Content in section one.
+
+### Subsection
+Content in subsection.
+
+## Section Two
+More content."#;
+
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+
+        // Should have entries for each heading
+        assert!(breadcrumbs.contains_key(&"# Main Heading".to_string()));
+        assert!(breadcrumbs.contains_key(&"## Section One".to_string()));
+        assert!(breadcrumbs.contains_key(&"### Subsection".to_string()));
+
+        // Subsection should have full path
+        let subsection_path = &breadcrumbs["### Subsection"];
+        assert_eq!(subsection_path.len(), 3);
+        assert_eq!(subsection_path[0], "# Main Heading");
+        assert_eq!(subsection_path[1], "## Section One");
+        assert_eq!(subsection_path[2], "### Subsection");
+
+        // Section Two should have path from Main
+        let section_two_path = &breadcrumbs["## Section Two"];
+        assert_eq!(section_two_path.len(), 2);
+        assert_eq!(section_two_path[0], "# Main Heading");
+        assert_eq!(section_two_path[1], "## Section Two");
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs_empty() {
+        let markdown = "Just text, no headings.";
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+        assert!(breadcrumbs.is_empty());
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs_single() {
+        let markdown = "# Only Heading\nSome text.";
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+        assert_eq!(breadcrumbs.len(), 1);
+        let path = &breadcrumbs["# Only Heading"];
+        assert_eq!(path.len(), 1);
+        assert_eq!(path[0], "# Only Heading");
+    }
+
+    #[test]
+    fn test_build_heading_breadcrumbs_skipped_levels() {
+        let markdown = "# Main\n### Deep\nText.";
+        let breadcrumbs = build_heading_breadcrumbs(markdown);
+        // H3 should still show just under H1 in path
+        let path = &breadcrumbs["### Deep"];
+        assert_eq!(path, &vec!["# Main", "### Deep"]);
+    }
+
+    #[test]
+    fn test_find_content_matches() {
+        let content = r#"# Main
+Some text with project word here.
+
+## Section
+Another project mention.
+
+More project references."#;
+
+        let matches = find_content_matches(content, "project");
+
+        // Should find all 3 matches
+        assert_eq!(matches.len(), 3);
+
+        // First match should be under "# Main"
+        assert_eq!(matches[0].breadcrumb, vec!["# Main"]);
+        assert!(matches[0].snippet.contains("project"));
+
+        // Second match should be under "# Main > ## Section"
+        assert_eq!(matches[1].breadcrumb, vec!["# Main", "## Section"]);
+    }
+
+    #[test]
+    fn test_find_content_matches_empty_query() {
+        let content = r#"# Main
+Some text with content here.
+
+## Section
+More content."#;
+
+        let matches = find_content_matches(content, "");
+
+        // Empty query should return no matches (not infinite loop)
+        assert_eq!(matches.len(), 0);
     }
 }
