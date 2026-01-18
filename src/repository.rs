@@ -12,6 +12,37 @@ use pulldown_cmark::{Event, Parser};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
+/// Represents a search match with all occurrences in a note
+#[derive(Debug, Clone)]
+pub struct SearchMatch {
+    pub note: Note,
+    pub locations: Vec<MatchLocation>,
+}
+
+/// Where a match was found in a note
+#[derive(Debug, Clone)]
+pub enum MatchLocation {
+    /// Match in note title
+    Title {
+        /// Position of match in title
+        position: usize,
+    },
+    /// Match in a tag
+    Tag {
+        /// The tag that matched
+        tag: String,
+    },
+    /// Match in note content
+    Content {
+        /// Heading breadcrumb trail (e.g., ["# Main", "## Section"])
+        breadcrumb: Vec<String>,
+        /// Snippet of content around match
+        snippet: String,
+        /// Positions of matches within snippet (start, length)
+        match_positions: Vec<(usize, usize)>,
+    },
+}
+
 // ============================================================================
 // Repository
 // ============================================================================
