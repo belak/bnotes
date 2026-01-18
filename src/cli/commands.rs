@@ -146,6 +146,14 @@ pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -
         let total_matches = search_match.locations.len();
         let limited_locations = &search_match.locations[..limit.min(total_matches)];
 
+        // Count content matches to determine when to add spacing
+        let content_match_count = limited_locations
+            .iter()
+            .filter(|loc| matches!(loc, bnotes::MatchLocation::Content { .. }))
+            .count();
+
+        let mut content_match_index = 0;
+
         // Iterate through each MatchLocation and render based on type
         for location in limited_locations {
             match location {
@@ -173,6 +181,13 @@ pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -
                     write_with_highlights(&mut stdout, snippet, query, &text_base_color, &text_highlight_color)?;
                     writeln!(stdout)?;
                     stdout.reset()?;
+
+                    content_match_index += 1;
+
+                    // Add blank line between content matches (but not after the last one)
+                    if content_match_index < content_match_count {
+                        writeln!(stdout)?;
+                    }
                 }
             }
         }
