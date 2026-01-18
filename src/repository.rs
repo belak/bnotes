@@ -59,86 +59,103 @@ struct ContentMatch {
 
 /// Find all content matches with position and heading context
 fn find_content_matches(content: &str, query: &str) -> Vec<ContentMatch> {
+    // Guard against empty query to prevent infinite loop
+    if query.is_empty() {
+        return Vec::new();
+    }
+
     let query_lower = query.to_lowercase();
     let content_lower = content.to_lowercase();
     let mut matches = Vec::new();
 
-    // Build heading breadcrumbs
-    let breadcrumb_map = build_heading_breadcrumbs(content);
+    // Build heading position map: for each position, what's the active breadcrumb?
+    let heading_positions = build_heading_positions(content);
 
-    // Track current position and active heading
-    let mut char_pos = 0;
-    let mut current_breadcrumb = vec!["Document Start".to_string()];
+    // Find all matches in content
+    let mut search_pos = 0;
+    while let Some(relative_pos) = content_lower[search_pos..].find(&query_lower) {
+        let absolute_pos = search_pos + relative_pos;
+
+        // Determine breadcrumb for this position
+        let breadcrumb = get_breadcrumb_at_position(&heading_positions, absolute_pos);
+
+        // Extract snippet with original case
+        let snippet = extract_snippet(content, absolute_pos, query.len(), 60);
+
+        // Find match positions in snippet for highlighting
+        let snippet_lower = snippet.to_lowercase();
+        let mut match_positions = Vec::new();
+        let mut snippet_pos = 0;
+
+        while let Some(pos) = snippet_lower[snippet_pos..].find(&query_lower) {
+            match_positions.push((snippet_pos + pos, query.len()));
+            snippet_pos += pos + query.len();
+        }
+
+        matches.push(ContentMatch {
+            breadcrumb,
+            snippet,
+            match_positions,
+        });
+
+        search_pos = absolute_pos + query.len();
+    }
+
+    matches
+}
+
+/// Build list of (position, breadcrumb) pairs by parsing headings
+fn build_heading_positions(content: &str) -> Vec<(usize, Vec<String>)> {
+    let mut positions = Vec::new();
     let mut in_heading = false;
-    let mut current_heading_text = String::new();
-    let mut current_heading_level = HeadingLevel::H1;
+    let mut heading_text = String::new();
+    let mut heading_level = HeadingLevel::H1;
 
+    let breadcrumb_map = build_heading_breadcrumbs(content);
     let parser = Parser::new(content);
 
-    for event in parser {
+    for (event, range) in parser.into_offset_iter() {
         match event {
             Event::Start(Tag::Heading { level, .. }) => {
                 in_heading = true;
-                current_heading_level = level;
-                current_heading_text.clear();
+                heading_level = level;
+                heading_text.clear();
             }
             Event::End(TagEnd::Heading(_)) => {
-                if in_heading && !current_heading_text.is_empty() {
-                    let level_num = heading_level_to_num(&current_heading_level);
-                    let markers = "#".repeat(level_num as usize);
-                    let formatted = format!("{} {}", markers, current_heading_text.trim());
+                if in_heading && !heading_text.is_empty() {
+                    let markers = "#".repeat(heading_level_to_num(&heading_level) as usize);
+                    let formatted = format!("{} {}", markers, heading_text.trim());
 
-                    // Update current breadcrumb from map
                     if let Some(breadcrumb) = breadcrumb_map.get(&formatted) {
-                        current_breadcrumb = breadcrumb.clone();
+                        // Record that from this position onward, we're under this breadcrumb
+                        positions.push((range.end, breadcrumb.clone()));
                     }
                 }
                 in_heading = false;
             }
             Event::Text(text) => {
                 if in_heading {
-                    current_heading_text.push_str(&text);
-                } else {
-                    // Search for matches in this text chunk
-                    let text_lower = text.to_lowercase();
-                    let mut search_pos = 0;
-
-                    while let Some(relative_pos) = text_lower[search_pos..].find(&query_lower) {
-                        let absolute_pos = char_pos + search_pos + relative_pos;
-
-                        // Extract snippet
-                        let snippet = extract_snippet(&content_lower, absolute_pos, query.len(), 60);
-
-                        // Find all query occurrences in snippet for highlighting
-                        let snippet_lower = snippet.to_lowercase();
-                        let mut match_positions = Vec::new();
-                        let mut snippet_search_pos = 0;
-
-                        while let Some(pos) = snippet_lower[snippet_search_pos..].find(&query_lower) {
-                            match_positions.push((snippet_search_pos + pos, query.len()));
-                            snippet_search_pos += pos + query.len();
-                        }
-
-                        // Use original content for snippet (preserve case)
-                        let original_snippet = extract_snippet(content, absolute_pos, query.len(), 60);
-
-                        matches.push(ContentMatch {
-                            breadcrumb: current_breadcrumb.clone(),
-                            snippet: original_snippet,
-                            match_positions,
-                        });
-
-                        search_pos += relative_pos + query.len();
-                    }
-
-                    char_pos += text.len();
+                    heading_text.push_str(&text);
                 }
             }
             _ => {}
         }
     }
 
-    matches
+    positions
+}
+
+/// Get the active breadcrumb at a given position
+fn get_breadcrumb_at_position(positions: &[(usize, Vec<String>)], pos: usize) -> Vec<String> {
+    // Find the last heading position before or at pos
+    for (heading_pos, breadcrumb) in positions.iter().rev() {
+        if *heading_pos <= pos {
+            return breadcrumb.clone();
+        }
+    }
+
+    // Default if before any heading
+    vec!["Document Start".to_string()]
 }
 
 /// Convert HeadingLevel to numeric level (1-6)
@@ -985,5 +1002,19 @@ More project references."#;
 
         // Second match should be under "# Main > ## Section"
         assert_eq!(matches[1].breadcrumb, vec!["# Main", "## Section"]);
+    }
+
+    #[test]
+    fn test_find_content_matches_empty_query() {
+        let content = r#"# Main
+Some text with content here.
+
+## Section
+More content."#;
+
+        let matches = find_content_matches(content, "");
+
+        // Empty query should return no matches (not infinite loop)
+        assert_eq!(matches.len(), 0);
     }
 }
