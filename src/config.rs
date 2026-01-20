@@ -19,6 +19,8 @@ pub struct LibraryConfig {
     pub template_dir: PathBuf,
     #[serde(default)]
     pub periodic: PeriodicConfig,
+    #[serde(default)]
+    pub task: TaskConfig,
 }
 
 /// Configuration for periodic notes
@@ -32,12 +34,43 @@ pub struct PeriodicConfig {
     pub quarterly_template: String,
 }
 
+/// Task sort order options
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskSortOrder {
+    /// Sort by priority, then by ID (default)
+    PriorityId,
+    /// Sort by ID only
+    Id,
+}
+
+impl Default for TaskSortOrder {
+    fn default() -> Self {
+        Self::PriorityId
+    }
+}
+
+/// Configuration for tasks
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskConfig {
+    #[serde(default)]
+    pub sort_order: TaskSortOrder,
+}
+
 impl Default for PeriodicConfig {
     fn default() -> Self {
         Self {
             daily_template: default_daily_template(),
             weekly_template: default_weekly_template(),
             quarterly_template: default_quarterly_template(),
+        }
+    }
+}
+
+impl Default for TaskConfig {
+    fn default() -> Self {
+        Self {
+            sort_order: TaskSortOrder::default(),
         }
     }
 }
@@ -63,6 +96,7 @@ impl Default for LibraryConfig {
         Self {
             template_dir: default_template_dir(),
             periodic: PeriodicConfig::default(),
+            task: TaskConfig::default(),
         }
     }
 }
@@ -125,5 +159,25 @@ daily_template = "custom-daily.md"
         assert_eq!(config.periodic.daily_template, "daily.md");
         assert_eq!(config.periodic.weekly_template, "weekly.md");
         assert_eq!(config.periodic.quarterly_template, "quarterly.md");
+        assert_eq!(config.task.sort_order, TaskSortOrder::PriorityId);
+    }
+
+    #[test]
+    fn test_load_config_with_task_sort_order() {
+        let storage = MemoryStorage::new();
+        storage
+            .write(
+                Path::new(".bnotes/config.toml"),
+                r#"
+template_dir = "templates"
+
+[task]
+sort_order = "id"
+"#,
+            )
+            .unwrap();
+
+        let config = LibraryConfig::load(&storage).unwrap();
+        assert_eq!(config.task.sort_order, TaskSortOrder::Id);
     }
 }

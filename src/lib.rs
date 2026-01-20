@@ -149,23 +149,32 @@ impl BNotes {
             });
         }
 
-        // Sort by priority (ascending, None last), then by ID
-        tasks.sort_by(|a, b| {
-            match (&a.priority, &b.priority) {
-                (Some(p1), Some(p2)) => {
-                    // Compare priorities as strings (A < B < C, etc.)
-                    let cmp = p1.cmp(p2);
-                    if cmp != std::cmp::Ordering::Equal {
-                        cmp
-                    } else {
-                        a.id().cmp(&b.id())
+        // Sort based on configuration
+        match self.config.task.sort_order {
+            config::TaskSortOrder::PriorityId => {
+                // Sort by priority (ascending, None last), then by ID
+                tasks.sort_by(|a, b| {
+                    match (&a.priority, &b.priority) {
+                        (Some(p1), Some(p2)) => {
+                            // Compare priorities as strings (A < B < C, etc.)
+                            let cmp = p1.cmp(p2);
+                            if cmp != std::cmp::Ordering::Equal {
+                                cmp
+                            } else {
+                                a.id().cmp(&b.id())
+                            }
+                        }
+                        (Some(_), None) => std::cmp::Ordering::Less,
+                        (None, Some(_)) => std::cmp::Ordering::Greater,
+                        (None, None) => a.id().cmp(&b.id()),
                     }
-                }
-                (Some(_), None) => std::cmp::Ordering::Less,
-                (None, Some(_)) => std::cmp::Ordering::Greater,
-                (None, None) => a.id().cmp(&b.id()),
+                });
             }
-        });
+            config::TaskSortOrder::Id => {
+                // Sort by ID only
+                tasks.sort_by(|a, b| a.id().cmp(&b.id()));
+            }
+        }
 
         Ok(tasks)
     }
@@ -630,5 +639,61 @@ title: Note 2
         // No priority last
         assert_eq!(tasks[4].priority, None);
         assert_eq!(tasks[4].text, "Task without priority");
+    }
+
+    #[test]
+    fn test_bnotes_list_tasks_sorted_by_id() {
+        let storage = Box::new(MemoryStorage::new());
+
+        // Create notes with various priority tasks
+        storage
+            .write(
+                Path::new("a-note.md"),
+                r#"---
+title: A Note
+---
+
+# A Note
+
+- [ ] (C) Low priority task from a-note
+"#,
+            )
+            .unwrap();
+
+        storage
+            .write(
+                Path::new("b-note.md"),
+                r#"---
+title: B Note
+---
+
+# B Note
+
+- [ ] (A) High priority task from b-note
+"#,
+            )
+            .unwrap();
+
+        // Set config to sort by ID only
+        storage
+            .write(
+                Path::new(".bnotes/config.toml"),
+                r#"
+[task]
+sort_order = "id"
+"#,
+            )
+            .unwrap();
+
+        let config = config::LibraryConfig::load(&*storage).unwrap();
+        let bnotes = BNotes::new(config, storage);
+        let tasks = bnotes.list_tasks(&[], None).unwrap();
+
+        // Should be sorted by ID (filename#index), ignoring priority
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].id(), "a-note#1");
+        assert_eq!(tasks[0].priority, Some("C".to_string()));
+        assert_eq!(tasks[1].id(), "b-note#1");
+        assert_eq!(tasks[1].priority, Some("A".to_string()));
     }
 }
