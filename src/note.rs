@@ -224,9 +224,26 @@ pub struct Task {
     pub index: usize, // 1-based index within the note
     pub completed: bool,
     pub text: String,
+    pub priority: Option<String>,
 }
 
 impl Task {
+    /// Parse priority from task text in format (Priority) Task text
+    /// Returns (priority, remaining_text) or (None, original_text)
+    fn parse_priority(text: &str) -> (Option<String>, String) {
+        let trimmed = text.trim();
+        if trimmed.starts_with('(') {
+            if let Some(end_paren) = trimmed.find(')') {
+                let priority = trimmed[1..end_paren].trim().to_string();
+                let remaining = trimmed[end_paren + 1..].trim().to_string();
+                if !priority.is_empty() {
+                    return (Some(priority), remaining);
+                }
+            }
+        }
+        (None, text.to_string())
+    }
+
     /// Extract all tasks from a note
     pub fn extract_from_note(note: &Note) -> Vec<Task> {
         let mut tasks = Vec::new();
@@ -256,12 +273,15 @@ impl Task {
                 Event::End(TagEnd::Item) if in_task_item => {
                     task_index += 1;
 
+                    let (priority, text) = Self::parse_priority(&task_text);
+
                     tasks.push(Task {
                         note_path: note.path.clone(),
                         note_title: note.title.clone(),
                         index: task_index,
                         completed: is_checked,
-                        text: task_text.trim().to_string(),
+                        text,
+                        priority,
                     });
 
                     in_task_item = false;
@@ -345,10 +365,53 @@ More text.
         assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[0].text, "First task");
         assert!(!tasks[0].completed);
+        assert_eq!(tasks[0].priority, None);
         assert_eq!(tasks[1].text, "Completed task");
         assert!(tasks[1].completed);
+        assert_eq!(tasks[1].priority, None);
         assert_eq!(tasks[2].text, "Another task");
         assert!(!tasks[2].completed);
+        assert_eq!(tasks[2].priority, None);
+    }
+
+    #[test]
+    fn test_extract_tasks_with_priorities() {
+        let content = r#"---
+tags: [test]
+---
+
+# My Note
+
+## Tasks
+- [ ] (A) High priority task
+- [ ] (B) Medium priority task
+- [ ] Regular task without priority
+- [x] (A) Completed high priority
+- [ ] (C) Low priority task
+
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 5);
+
+        // Check priority parsing
+        assert_eq!(tasks[0].priority, Some("A".to_string()));
+        assert_eq!(tasks[0].text, "High priority task");
+
+        assert_eq!(tasks[1].priority, Some("B".to_string()));
+        assert_eq!(tasks[1].text, "Medium priority task");
+
+        assert_eq!(tasks[2].priority, None);
+        assert_eq!(tasks[2].text, "Regular task without priority");
+
+        assert_eq!(tasks[3].priority, Some("A".to_string()));
+        assert_eq!(tasks[3].text, "Completed high priority");
+        assert!(tasks[3].completed);
+
+        assert_eq!(tasks[4].priority, Some("C".to_string()));
+        assert_eq!(tasks[4].text, "Low priority task");
     }
 
     #[test]
@@ -359,6 +422,7 @@ More text.
             index: 3,
             completed: false,
             text: "Do something".to_string(),
+            priority: None,
         };
 
         assert_eq!(task.id(), "test-note#3");

@@ -149,6 +149,24 @@ impl BNotes {
             });
         }
 
+        // Sort by priority (ascending, None last), then by ID
+        tasks.sort_by(|a, b| {
+            match (&a.priority, &b.priority) {
+                (Some(p1), Some(p2)) => {
+                    // Compare priorities as strings (A < B < C, etc.)
+                    let cmp = p1.cmp(p2);
+                    if cmp != std::cmp::Ordering::Equal {
+                        cmp
+                    } else {
+                        a.id().cmp(&b.id())
+                    }
+                }
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => a.id().cmp(&b.id()),
+            }
+        });
+
         Ok(tasks)
     }
 
@@ -555,5 +573,62 @@ created: {{datetime}}
         assert_eq!(notes[0].title, "Test Daily");
         assert!(notes[0].content.contains("## Tasks"));
         assert_eq!(notes[0].tags, vec!["daily"]);
+    }
+
+    #[test]
+    fn test_bnotes_list_tasks_sorted_by_priority() {
+        let storage = Box::new(MemoryStorage::new());
+
+        // Create notes with various priority tasks
+        storage
+            .write(
+                Path::new("note1.md"),
+                r#"---
+title: Note 1
+---
+
+# Note 1
+
+- [ ] (B) Medium priority task
+- [ ] (A) High priority task
+- [ ] Task without priority
+"#,
+            )
+            .unwrap();
+
+        storage
+            .write(
+                Path::new("note2.md"),
+                r#"---
+title: Note 2
+---
+
+# Note 2
+
+- [ ] (C) Low priority task
+- [ ] (A) Another high priority
+"#,
+            )
+            .unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+        let tasks = bnotes.list_tasks(&[], None).unwrap();
+
+        // Should be sorted by priority (A, B, C) then by ID
+        assert_eq!(tasks.len(), 5);
+
+        // Both A priority tasks should come first
+        assert_eq!(tasks[0].priority, Some("A".to_string()));
+        assert_eq!(tasks[1].priority, Some("A".to_string()));
+
+        // B priority next
+        assert_eq!(tasks[2].priority, Some("B".to_string()));
+
+        // C priority next
+        assert_eq!(tasks[3].priority, Some("C".to_string()));
+
+        // No priority last
+        assert_eq!(tasks[4].priority, None);
+        assert_eq!(tasks[4].text, "Task without priority");
     }
 }
