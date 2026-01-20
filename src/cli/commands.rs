@@ -709,19 +709,12 @@ pub fn task_list(
     notes_dir: &Path,
     tags: &[String],
     status: Option<String>,
-    sort_order_str: &str,
+    sort_order: bnotes::TaskSortOrder,
     color: ColorChoice,
 ) -> Result<()> {
     validate_notes_dir(notes_dir)?;
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
-
-    // Parse sort order
-    let sort_order = match sort_order_str {
-        "priority-id" => bnotes::TaskSortOrder::PriorityId,
-        "id" => bnotes::TaskSortOrder::Id,
-        _ => anyhow::bail!("Invalid sort order: {}. Use 'priority-id' or 'id'.", sort_order_str),
-    };
 
     let tasks = bnotes.list_tasks(tags, status.as_deref(), sort_order)?;
 
