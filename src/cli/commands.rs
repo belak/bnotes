@@ -734,6 +734,16 @@ pub fn task_list(
 
         write!(stdout, "  ")?;
 
+        // Show urgency if present
+        if let Some(urgency) = &task.urgency {
+            write!(stdout, "{} ", urgency)?;
+        }
+
+        // Show priority if present
+        if let Some(priority) = &task.priority {
+            write!(stdout, "({}) ", priority)?;
+        }
+
         // Checkbox - [x] in green, [ ] default
         if task.completed {
             stdout.set_color(&colors::success())?;
