@@ -44,15 +44,9 @@ Run `bnotes --help` for all commands.
 
 ## Templates
 
-Default templates for daily, weekly, quarterly, and regular notes are embedded in the binary. You can customize them by copying templates to your `.templates/` directory - your versions will override the defaults.
+Default templates are embedded in the binary and work out of the box. Customize by copying templates to your `.templates/` directory.
 
-Sample templates are in the `templates/` directory. Includes templates for meetings, projects, books, and contacts. Templates support `{{title}}`, `{{date}}`, and `{{datetime}}` variables.
-
-Templates used automatically:
-- `default.md` - Regular notes created with `bnotes edit`
-- `daily.md` - Daily notes created with `bnotes daily`
-- `weekly.md` - Weekly notes created with `bnotes weekly`
-- `quarterly.md` - Quarterly notes created with `bnotes quarterly`
+See [templates/README.md](templates/README.md) for details.
 
 ## Notes
 
