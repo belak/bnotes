@@ -147,6 +147,40 @@ impl BNotes {
         Ok(repository::LinkGraph::build(&all_notes))
     }
 
+    /// Compare urgency levels: !!! < !! < ! < None
+    fn compare_urgency(a: &Option<String>, b: &Option<String>) -> std::cmp::Ordering {
+        match (a, b) {
+            (Some(a_urg), Some(b_urg)) => {
+                let a_val = match a_urg.as_str() {
+                    "!!!" => 1,
+                    "!!" => 2,
+                    "!" => 3,
+                    _ => 4,
+                };
+                let b_val = match b_urg.as_str() {
+                    "!!!" => 1,
+                    "!!" => 2,
+                    "!" => 3,
+                    _ => 4,
+                };
+                a_val.cmp(&b_val)
+            }
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+    }
+
+    /// Compare priority levels: A < B < C < ... < None
+    fn compare_priority(a: &Option<String>, b: &Option<String>) -> std::cmp::Ordering {
+        match (a, b) {
+            (Some(a_pri), Some(b_pri)) => a_pri.cmp(b_pri),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            (None, None) => std::cmp::Ordering::Equal,
+        }
+    }
+
     /// Create a new note with the given title and optional template
     ///
     /// Returns the relative path to the created note
