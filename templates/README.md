@@ -10,6 +10,8 @@ cp templates/* ~/notes/.templates/
 
 Or copy individual templates as needed.
 
+The `default.md` template is used automatically when creating notes without specifying a template.
+
 ## Periodic Notes
 
 - `daily.md` - Daily notes with tasks and quick capture

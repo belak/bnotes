@@ -48,6 +48,8 @@ Sample templates are in the `templates/` directory. Copy relevant templates to y
 
 Includes templates for daily/weekly/quarterly notes, meetings, projects, books, and contacts. Templates support `{{title}}`, `{{date}}`, and `{{datetime}}` variables.
 
+The `default.md` template is used automatically when creating notes without specifying a template.
+
 ## Notes
 
 Notes are markdown files with optional YAML frontmatter. Use `[[wiki links]]` to reference other notes. Tasks are GitHub-flavored markdown checkboxes (`- [ ] todo`).
