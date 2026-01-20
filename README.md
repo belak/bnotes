@@ -42,10 +42,14 @@ bnotes sync
 
 Run `bnotes --help` for all commands.
 
+## Templates
+
+Sample templates are in the `templates/` directory. Copy relevant templates to your own notes directory.
+
+Includes templates for daily/weekly/quarterly notes, meetings, projects, books, and contacts. Templates support `{{title}}`, `{{date}}`, and `{{datetime}}` variables.
+
 ## Notes
 
 Notes are markdown files with optional YAML frontmatter. Use `[[wiki links]]` to reference other notes. Tasks are GitHub-flavored markdown checkboxes (`- [ ] todo`).
-
-Templates live in `.templates/` and support `{{title}}`, `{{date}}`, and `{{datetime}}` variables. Sample templates are in the `templates/` directory.
 
 Periodic notes (daily, weekly, quarterly) follow naming conventions like `2026-01-20.md`, `2026-W03.md`, `2026-Q1.md`.
