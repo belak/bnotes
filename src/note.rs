@@ -225,23 +225,47 @@ pub struct Task {
     pub completed: bool,
     pub text: String,
     pub priority: Option<String>,
+    pub urgency: Option<String>,  // !!!, !!, !
 }
 
 impl Task {
-    /// Parse priority from task text in format (Priority) Task text
-    /// Returns (priority, remaining_text) or (None, original_text)
-    fn parse_priority(text: &str) -> (Option<String>, String) {
+    /// Parse urgency and priority from task text
+    /// Format: [urgency] [(priority)] task text
+    /// Urgency: !!!, !!, ! (must have space after)
+    /// Priority: (A), (B), etc.
+    /// Returns (urgency, priority, remaining_text)
+    fn parse_urgency_and_priority(text: &str) -> (Option<String>, Option<String>, String) {
         let trimmed = text.trim();
-        if trimmed.starts_with('(') {
-            if let Some(end_paren) = trimmed.find(')') {
-                let priority = trimmed[1..end_paren].trim().to_string();
-                let remaining = trimmed[end_paren + 1..].trim().to_string();
-                if !priority.is_empty() {
-                    return (Some(priority), remaining);
+
+        // Parse urgency first (requires space after)
+        let (urgency, rest) = if let Some(rest) = trimmed.strip_prefix("!!! ") {
+            (Some("!!!".to_string()), rest)
+        } else if let Some(rest) = trimmed.strip_prefix("!! ") {
+            (Some("!!".to_string()), rest)
+        } else if let Some(rest) = trimmed.strip_prefix("! ") {
+            (Some("!".to_string()), rest)
+        } else {
+            (None, trimmed)
+        };
+
+        // Then parse priority
+        let (priority, task_text) = if rest.starts_with('(') {
+            if let Some(end_paren) = rest.find(')') {
+                let priority_str = &rest[1..end_paren];
+                if priority_str.trim().is_empty() {
+                    (None, rest[end_paren + 1..].trim().to_string())
+                } else {
+                    let remaining = rest[end_paren + 1..].trim();
+                    (Some(priority_str.to_string()), remaining.to_string())
                 }
+            } else {
+                (None, rest.to_string())
             }
-        }
-        (None, text.to_string())
+        } else {
+            (None, rest.to_string())
+        };
+
+        (urgency, priority, task_text)
     }
 
     /// Extract all tasks from a note
@@ -273,7 +297,7 @@ impl Task {
                 Event::End(TagEnd::Item) if in_task_item => {
                     task_index += 1;
 
-                    let (priority, text) = Self::parse_priority(&task_text);
+                    let (urgency, priority, text) = Self::parse_urgency_and_priority(&task_text);
 
                     tasks.push(Task {
                         note_path: note.path.clone(),
@@ -282,6 +306,7 @@ impl Task {
                         completed: is_checked,
                         text,
                         priority,
+                        urgency,
                     });
 
                     in_task_item = false;
@@ -423,6 +448,7 @@ tags: [test]
             completed: false,
             text: "Do something".to_string(),
             priority: None,
+            urgency: None,
         };
 
         assert_eq!(task.id(), "test-note#3");
@@ -575,5 +601,69 @@ title: Test Note
         let note = Note::parse(Path::new("test.md"), content).unwrap();
         assert!(note.created.is_none());
         assert!(note.updated.is_none());
+    }
+
+    #[test]
+    fn test_parse_urgency_only() {
+        let content = "- [ ] !!! Fix critical bug";
+        let note_path = PathBuf::from("test.md");
+        let note = Note::parse(&note_path, &format!("# Test\n\n{}", content)).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].urgency, Some("!!!".to_string()));
+        assert_eq!(tasks[0].priority, None);
+        assert_eq!(tasks[0].text, "Fix critical bug");
+    }
+
+    #[test]
+    fn test_parse_urgency_and_priority() {
+        let content = "- [ ] !! (B) Moderate task";
+        let note_path = PathBuf::from("test.md");
+        let note = Note::parse(&note_path, &format!("# Test\n\n{}", content)).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].urgency, Some("!!".to_string()));
+        assert_eq!(tasks[0].priority, Some("B".to_string()));
+        assert_eq!(tasks[0].text, "Moderate task");
+    }
+
+    #[test]
+    fn test_parse_no_space_after_urgency() {
+        let content = "- [ ] !!!(A) Task";
+        let note_path = PathBuf::from("test.md");
+        let note = Note::parse(&note_path, &format!("# Test\n\n{}", content)).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].urgency, None);
+        assert_eq!(tasks[0].priority, None);
+        assert_eq!(tasks[0].text, "!!!(A) Task");
+    }
+
+    #[test]
+    fn test_parse_exclamation_in_text() {
+        let content = "- [ ] Do this now!";
+        let note_path = PathBuf::from("test.md");
+        let note = Note::parse(&note_path, &format!("# Test\n\n{}", content)).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].urgency, None);
+        assert_eq!(tasks[0].text, "Do this now!");
+    }
+
+    #[test]
+    fn test_parse_empty_priority() {
+        let content = "- [ ] !!! () Task with empty priority";
+        let note_path = PathBuf::from("test.md");
+        let note = Note::parse(&note_path, &format!("# Test\n\n{}", content)).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].urgency, Some("!!!".to_string()));
+        assert_eq!(tasks[0].priority, None);
+        assert_eq!(tasks[0].text, "Task with empty priority");
     }
 }
