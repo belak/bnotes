@@ -4,7 +4,7 @@ A personal note-taking CLI built around plain markdown files.
 
 ## Why
 
-Most note-taking apps lock you into databases or proprietary formats. This is just a CLI for working with a directory of markdown files. Search across notes, track tasks with checkboxes, link notes together with wiki-style links, and optionally sync with git.
+At it's core, bnotes is a CLI for working with a directory of markdown files. It adds some basic utilities like search, task tracking, note linking and git sync, roughly based on some of the ideas behind Obsidian.
 
 ## Installation
 
@@ -16,13 +16,13 @@ cargo install --path .
 
 ## Setup
 
+By default your notes will live in $XDG_DATA_HOME/bnotes (or ~/.local/share/bnotes).
+
 Set where your notes live:
 
 ```bash
 export BNOTES_DIR=~/notes
 ```
-
-Or run `bnotes init` to create `~/.config/bnotes/config.toml`.
 
 ## Usage
 
