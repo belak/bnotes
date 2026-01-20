@@ -34,6 +34,21 @@ use std::path::PathBuf;
 /// Result type alias using anyhow::Error
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
 
+/// Task sort order options
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskSortOrder {
+    /// Sort by priority, then by ID (default)
+    PriorityId,
+    /// Sort by ID only
+    Id,
+}
+
+impl Default for TaskSortOrder {
+    fn default() -> Self {
+        Self::PriorityId
+    }
+}
+
 /// Main library API for BNotes
 ///
 /// This struct provides the primary interface for interacting with notes.
@@ -120,7 +135,7 @@ impl BNotes {
     /// List all tasks, optionally filtered by tags and status
     ///
     /// Status can be Some("open"), Some("done"), or None for all tasks
-    pub fn list_tasks(&self, tags: &[String], status: Option<&str>) -> Result<Vec<note::Task>> {
+    pub fn list_tasks(&self, tags: &[String], status: Option<&str>, sort_order: TaskSortOrder) -> Result<Vec<note::Task>> {
         // Get notes, optionally filtered by tags
         let notes = if tags.is_empty() {
             self.repo.discover_notes()?
@@ -149,9 +164,9 @@ impl BNotes {
             });
         }
 
-        // Sort based on configuration
-        match self.config.task.sort_order {
-            config::TaskSortOrder::PriorityId => {
+        // Sort based on provided sort order
+        match sort_order {
+            TaskSortOrder::PriorityId => {
                 // Sort by priority (ascending, None last), then by ID
                 tasks.sort_by(|a, b| {
                     match (&a.priority, &b.priority) {
@@ -170,7 +185,7 @@ impl BNotes {
                     }
                 });
             }
-            config::TaskSortOrder::Id => {
+            TaskSortOrder::Id => {
                 // Sort by ID only
                 tasks.sort_by(|a, b| a.id().cmp(&b.id()));
             }
@@ -621,7 +636,7 @@ title: Note 2
             .unwrap();
 
         let bnotes = BNotes::with_defaults(storage);
-        let tasks = bnotes.list_tasks(&[], None).unwrap();
+        let tasks = bnotes.list_tasks(&[], None, TaskSortOrder::PriorityId).unwrap();
 
         // Should be sorted by priority (A, B, C) then by ID
         assert_eq!(tasks.len(), 5);
@@ -674,20 +689,8 @@ title: B Note
             )
             .unwrap();
 
-        // Set config to sort by ID only
-        storage
-            .write(
-                Path::new(".bnotes/config.toml"),
-                r#"
-[task]
-sort_order = "id"
-"#,
-            )
-            .unwrap();
-
-        let config = config::LibraryConfig::load(&*storage).unwrap();
-        let bnotes = BNotes::new(config, storage);
-        let tasks = bnotes.list_tasks(&[], None).unwrap();
+        let bnotes = BNotes::with_defaults(storage);
+        let tasks = bnotes.list_tasks(&[], None, TaskSortOrder::Id).unwrap();
 
         // Should be sorted by ID (filename#index), ignoring priority
         assert_eq!(tasks.len(), 2);

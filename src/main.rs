@@ -70,7 +70,11 @@ enum Commands {
     },
 
     /// List open tasks (alias for 'task list --status open')
-    Tasks,
+    Tasks {
+        /// Sort order for tasks (priority-id or id)
+        #[arg(long, default_value = "priority-id")]
+        sort_order: String,
+    },
 
     /// Check for issues in the note collection
     Doctor,
@@ -169,6 +173,10 @@ enum TaskCommands {
         /// Filter by status (open or done)
         #[arg(long)]
         status: Option<String>,
+
+        /// Sort order for tasks (priority-id or id)
+        #[arg(long, default_value = "priority-id")]
+        sort_order: String,
     },
 
     /// Show a specific task with context
@@ -203,8 +211,8 @@ fn main() -> Result<()> {
         Commands::Edit { title, template } => {
             cli::commands::edit(&notes_dir, &title, template)?;
         }
-        Commands::Tasks => {
-            cli::commands::task_list(&notes_dir, &[], Some("open".to_string()), cli_args.color)?;
+        Commands::Tasks { sort_order } => {
+            cli::commands::task_list(&notes_dir, &[], Some("open".to_string()), &sort_order, cli_args.color)?;
         }
         Commands::Doctor => {
             cli::commands::doctor(&notes_dir, cli_args.color)?;
@@ -230,8 +238,8 @@ fn main() -> Result<()> {
             }
         },
         Commands::Task(task_cmd) => match task_cmd {
-            TaskCommands::List { tags, status } => {
-                cli::commands::task_list(&notes_dir, &tags, status, cli_args.color)?;
+            TaskCommands::List { tags, status, sort_order } => {
+                cli::commands::task_list(&notes_dir, &tags, status, &sort_order, cli_args.color)?;
             }
             TaskCommands::Show { task_id } => {
                 cli::commands::task_show(&notes_dir, &task_id, cli_args.color)?;
