@@ -34,18 +34,41 @@ use std::path::PathBuf;
 /// Result type alias using anyhow::Error
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
 
-/// Task sort order options
+/// Task sort order - comma-separated list of fields
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskSortOrder {
+    fields: Vec<SortField>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskSortOrder {
-    /// Sort by priority, then by ID (default)
-    PriorityId,
-    /// Sort by ID only
+enum SortField {
+    Urgency,
+    Priority,
     Id,
+}
+
+impl TaskSortOrder {
+    /// Parse sort order from comma-separated string
+    pub fn parse(s: &str) -> Result<Self> {
+        let fields: Result<Vec<_>> = s
+            .split(',')
+            .map(|f| match f.trim() {
+                "urgency" => Ok(SortField::Urgency),
+                "priority" => Ok(SortField::Priority),
+                "id" => Ok(SortField::Id),
+                unknown => anyhow::bail!("Unknown sort field: {}. Valid fields: urgency, priority, id", unknown),
+            })
+            .collect();
+
+        Ok(TaskSortOrder { fields: fields? })
+    }
 }
 
 impl Default for TaskSortOrder {
     fn default() -> Self {
-        Self::PriorityId
+        Self {
+            fields: vec![SortField::Urgency, SortField::Priority, SortField::Id]
+        }
     }
 }
 
@@ -165,31 +188,9 @@ impl BNotes {
         }
 
         // Sort based on provided sort order
-        match sort_order {
-            TaskSortOrder::PriorityId => {
-                // Sort by priority (ascending, None last), then by ID
-                tasks.sort_by(|a, b| {
-                    match (&a.priority, &b.priority) {
-                        (Some(p1), Some(p2)) => {
-                            // Compare priorities as strings (A < B < C, etc.)
-                            let cmp = p1.cmp(p2);
-                            if cmp != std::cmp::Ordering::Equal {
-                                cmp
-                            } else {
-                                a.id().cmp(&b.id())
-                            }
-                        }
-                        (Some(_), None) => std::cmp::Ordering::Less,
-                        (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (None, None) => a.id().cmp(&b.id()),
-                    }
-                });
-            }
-            TaskSortOrder::Id => {
-                // Sort by ID only
-                tasks.sort_by(|a, b| a.id().cmp(&b.id()));
-            }
-        }
+        // TODO: Implement new sorting logic in Task 4
+        let _ = sort_order;
+        tasks.sort_by(|a, b| a.id().cmp(&b.id()));
 
         Ok(tasks)
     }
@@ -636,7 +637,7 @@ title: Note 2
             .unwrap();
 
         let bnotes = BNotes::with_defaults(storage);
-        let tasks = bnotes.list_tasks(&[], None, TaskSortOrder::PriorityId).unwrap();
+        let tasks = bnotes.list_tasks(&[], None, TaskSortOrder::parse("priority,id").unwrap()).unwrap();
 
         // Should be sorted by priority (A, B, C) then by ID
         assert_eq!(tasks.len(), 5);
@@ -690,7 +691,7 @@ title: B Note
             .unwrap();
 
         let bnotes = BNotes::with_defaults(storage);
-        let tasks = bnotes.list_tasks(&[], None, TaskSortOrder::Id).unwrap();
+        let tasks = bnotes.list_tasks(&[], None, TaskSortOrder::parse("id").unwrap()).unwrap();
 
         // Should be sorted by ID (filename#index), ignoring priority
         assert_eq!(tasks.len(), 2);
@@ -698,5 +699,26 @@ title: B Note
         assert_eq!(tasks[0].priority, Some("C".to_string()));
         assert_eq!(tasks[1].id(), "b-note#1");
         assert_eq!(tasks[1].priority, Some("A".to_string()));
+    }
+
+    #[test]
+    fn test_task_sort_order_parse() {
+        let order = TaskSortOrder::parse("urgency,priority,id").unwrap();
+        assert_eq!(order.fields.len(), 3);
+
+        let order = TaskSortOrder::parse("priority,id").unwrap();
+        assert_eq!(order.fields.len(), 2);
+
+        let order = TaskSortOrder::parse("id").unwrap();
+        assert_eq!(order.fields.len(), 1);
+
+        let result = TaskSortOrder::parse("invalid,priority");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_task_sort_order_default() {
+        let order = TaskSortOrder::default();
+        assert_eq!(order.fields.len(), 3);
     }
 }
