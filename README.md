@@ -52,6 +52,12 @@ See [templates/README.md](templates/README.md) for details.
 
 ## Notes
 
-Notes are markdown files with optional YAML frontmatter. Use `[[wiki links]]` to reference other notes. Tasks are GitHub-flavored markdown checkboxes (`- [ ] todo`).
+Notes are markdown files with optional YAML frontmatter. Use `[[wiki links]]` to reference other notes.
+
+Tasks are GitHub-flavored markdown checkboxes with optional urgency and priority:
+- `- [ ] todo` - Basic task
+- `- [ ] !!! urgent task` - Critical/now (also `!!` for soon, `!` for eventually)
+- `- [ ] (A) important task` - Priority task (A, B, C, etc.)
+- `- [ ] !! (B) soon and medium priority` - Both urgency and priority
 
 Periodic notes (daily, weekly, quarterly) follow naming conventions like `2026-01-20.md`, `2026-W03.md`, `2026-Q1.md`.
