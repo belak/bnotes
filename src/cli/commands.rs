@@ -219,47 +219,7 @@ pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -
     Ok(())
 }
 
-pub fn new(
-    notes_dir: &Path,
-    title: Option<String>,
-    template_name: Option<String>,
-) -> Result<()> {
-    validate_notes_dir(notes_dir)?;
-
-    // CLI handles prompting for missing title
-    let title = if let Some(t) = title {
-        t
-    } else {
-        print!("Enter note title: ");
-        io::stdout().flush()?;
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-        let input = input.trim();
-
-        if input.is_empty() {
-            anyhow::bail!("Title cannot be empty");
-        }
-
-        input.to_string()
-    };
-
-    // Call library with complete data
-    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
-    let bnotes = BNotes::with_defaults(storage);
-
-    let note_path = bnotes.create_note(&title, template_name.as_deref())?;
-
-    // note_path is relative, join with notes_dir for display
-    println!(
-        "Created note: {}",
-        notes_dir.join(note_path).display()
-    );
-
-    Ok(())
-}
-
-pub fn edit(notes_dir: &Path, title: &str) -> Result<()> {
+pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>) -> Result<()> {
     validate_notes_dir(notes_dir)?;
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
@@ -267,7 +227,23 @@ pub fn edit(notes_dir: &Path, title: &str) -> Result<()> {
     let matches = bnotes.find_note_by_title(title)?;
 
     let note_path = match matches.len() {
-        0 => anyhow::bail!("Note not found: {}", title),
+        0 => {
+            // Note doesn't exist - prompt to create it
+            print!("Note doesn't exist. Create it? [Y/n] ");
+            io::stdout().flush()?;
+
+            let mut input = String::new();
+            io::stdin().read_line(&mut input)?;
+            let input = input.trim().to_lowercase();
+
+            if input == "n" || input == "no" {
+                return Ok(());
+            }
+
+            // Create the note
+            let relative_path = bnotes.create_note(title, template_name.as_deref())?;
+            notes_dir.join(relative_path)
+        }
         1 => notes_dir.join(&matches[0].path),
         _ => {
             println!("Multiple notes found with title '{}':", title);

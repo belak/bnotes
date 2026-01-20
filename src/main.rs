@@ -59,20 +59,14 @@ enum Commands {
         limit: usize,
     },
 
-    /// Create a new note
-    New {
-        /// Note title
-        title: Option<String>,
-
-        /// Template name to use
-        #[arg(long)]
-        template: Option<String>,
-    },
-
     /// Open a note in the default editor
     Edit {
         /// Note title
         title: String,
+
+        /// Template to use if creating a new note
+        #[arg(long)]
+        template: Option<String>,
     },
 
     /// List open tasks (alias for 'task list --status open')
@@ -206,11 +200,8 @@ fn main() -> Result<()> {
         Commands::Search { query, limit } => {
             cli::commands::search(&notes_dir, &query, limit, cli_args.color)?;
         }
-        Commands::New { title, template } => {
-            cli::commands::new(&notes_dir, title, template)?;
-        }
-        Commands::Edit { title } => {
-            cli::commands::edit(&notes_dir, &title)?;
+        Commands::Edit { title, template } => {
+            cli::commands::edit(&notes_dir, &title, template)?;
         }
         Commands::Tasks => {
             cli::commands::task_list(&notes_dir, &[], Some("open".to_string()), cli_args.color)?;
