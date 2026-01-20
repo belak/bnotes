@@ -222,9 +222,19 @@ impl BNotes {
         }
 
         // Sort based on provided sort order
-        // TODO: Implement new sorting logic in Task 4
-        let _ = sort_order;
-        tasks.sort_by(|a, b| a.id().cmp(&b.id()));
+        tasks.sort_by(|a, b| {
+            for field in &sort_order.fields {
+                let cmp = match field {
+                    SortField::Urgency => Self::compare_urgency(&a.urgency, &b.urgency),
+                    SortField::Priority => Self::compare_priority(&a.priority, &b.priority),
+                    SortField::Id => a.id().cmp(&b.id()),
+                };
+                if cmp != std::cmp::Ordering::Equal {
+                    return cmp;
+                }
+            }
+            std::cmp::Ordering::Equal
+        });
 
         Ok(tasks)
     }
@@ -754,5 +764,68 @@ title: B Note
     fn test_task_sort_order_default() {
         let order = TaskSortOrder::default();
         assert_eq!(order.fields.len(), 3);
+    }
+
+    #[test]
+    fn test_task_sorting_by_urgency_priority_id() {
+        let storage = Box::new(MemoryStorage::new());
+
+        storage.write(Path::new("tasks.md"), r#"# Tasks
+
+- [ ] !!! (A) Critical and important
+- [ ] !! (A) Soon and important
+- [ ] !!! (C) Critical but low priority
+- [ ] (A) Important but not urgent
+- [ ] ! Eventually do this
+- [ ] Plain task
+"#).unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+        let sort_order = TaskSortOrder::parse("urgency,priority,id").unwrap();
+        let tasks = bnotes.list_tasks(&[], None, sort_order).unwrap();
+
+        assert_eq!(tasks.len(), 6);
+
+        // First two should both have !!!, sorted by priority (A < C)
+        assert_eq!(tasks[0].urgency, Some("!!!".to_string()));
+        assert_eq!(tasks[0].priority, Some("A".to_string()));
+
+        assert_eq!(tasks[1].urgency, Some("!!!".to_string()));
+        assert_eq!(tasks[1].priority, Some("C".to_string()));
+
+        // Next should have !!
+        assert_eq!(tasks[2].urgency, Some("!!".to_string()));
+
+        // Then !
+        assert_eq!(tasks[3].urgency, Some("!".to_string()));
+
+        // Then tasks without urgency, sorted by priority
+        assert_eq!(tasks[4].urgency, None);
+        assert_eq!(tasks[4].priority, Some("A".to_string()));
+
+        // Finally no urgency, no priority
+        assert_eq!(tasks[5].urgency, None);
+        assert_eq!(tasks[5].priority, None);
+    }
+
+    #[test]
+    fn test_task_sorting_by_priority_id() {
+        let storage = Box::new(MemoryStorage::new());
+
+        storage.write(Path::new("tasks.md"), r#"# Tasks
+
+- [ ] !!! (C) Critical C
+- [ ] (A) Important A
+- [ ] (B) Important B
+"#).unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+        let sort_order = TaskSortOrder::parse("priority,id").unwrap();
+        let tasks = bnotes.list_tasks(&[], None, sort_order).unwrap();
+
+        // Should sort by priority only, ignoring urgency
+        assert_eq!(tasks[0].priority, Some("A".to_string()));
+        assert_eq!(tasks[1].priority, Some("B".to_string()));
+        assert_eq!(tasks[2].priority, Some("C".to_string()));
     }
 }
