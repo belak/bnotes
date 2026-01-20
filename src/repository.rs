@@ -409,12 +409,21 @@ impl Repository {
 
             render_template(&template_content, title)
         } else {
-            // Default note with frontmatter
-            let now = Utc::now();
-            let datetime = now.to_rfc3339();
+            // Try to use default.md template if it exists
+            let default_template_path = template_dir.join("default.md");
 
-            format!(
-                r#"---
+            if self.storage.exists(&default_template_path) {
+                let template_content = self.storage.read_to_string(&default_template_path)
+                    .with_context(|| format!("Failed to read default template: {}", default_template_path.display()))?;
+
+                render_template(&template_content, title)
+            } else {
+                // Fallback to hardcoded default
+                let now = Utc::now();
+                let datetime = now.to_rfc3339();
+
+                format!(
+                    r#"---
 tags: []
 created: {}
 updated: {}
@@ -423,8 +432,9 @@ updated: {}
 # {}
 
 "#,
-                datetime, datetime, title
-            )
+                    datetime, datetime, title
+                )
+            }
         };
 
         // Write note

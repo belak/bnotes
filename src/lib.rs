@@ -488,4 +488,32 @@ created: {{datetime}}
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
     }
+
+    #[test]
+    fn test_bnotes_create_note_with_default_template() {
+        let storage = Box::new(MemoryStorage::new());
+        storage
+            .write(
+                Path::new(".btools/templates/default.md"),
+                r#"---
+tags: []
+created: {{datetime}}
+---
+
+# {{title}}
+"#,
+            )
+            .unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+        let path = bnotes.create_note("Test Note", None).unwrap();
+
+        assert_eq!(path, Path::new("test-note.md"));
+
+        // Verify the note was created with default template
+        let notes = bnotes.list_notes(&[]).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].title, "Test Note");
+        assert!(notes[0].content.contains("# Test Note"));
+    }
 }
