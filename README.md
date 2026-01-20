@@ -2,6 +2,8 @@
 
 A personal note-taking CLI built around plain markdown files.
 
+This is a personal project built for my own use primarily via AI. It works for me but may have rough edges. Use at your own risk.
+
 ## Why
 
 At it's core, bnotes is a CLI for working with a directory of markdown files. It adds some basic utilities like search, task tracking, note linking and git sync, roughly based on some of the ideas behind Obsidian.
