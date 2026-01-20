@@ -10,21 +10,23 @@ cp templates/* ~/notes/.templates/
 
 Or copy individual templates as needed.
 
-The `default.md` template is used automatically when creating notes without specifying a template.
+## Templates Used Automatically
 
-## Periodic Notes
+These templates are used automatically by specific commands:
 
-- `daily.md` - Daily notes with tasks and quick capture
-- `weekly.md` - Weekly reviews with goals and retrospective
-- `quarterly.md` - Quarterly planning with OKRs
+- `default.md` - Used by `bnotes edit` when creating regular notes
+- `daily.md` - Used by `bnotes daily`
+- `weekly.md` - Used by `bnotes weekly`
+- `quarterly.md` - Used by `bnotes quarterly`
 
 ## Other Templates
+
+Use these with the `--template` flag:
 
 - `meeting.md` - Meeting notes with agenda and action items
 - `project.md` - Project planning and tracking
 - `person.md` - Contact and relationship notes
 - `book.md` - Reading notes and key ideas
-- `default.md` - Minimal template for general notes
 
 ## Variables
 

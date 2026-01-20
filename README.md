@@ -48,7 +48,11 @@ Sample templates are in the `templates/` directory. Copy relevant templates to y
 
 Includes templates for daily/weekly/quarterly notes, meetings, projects, books, and contacts. Templates support `{{title}}`, `{{date}}`, and `{{datetime}}` variables.
 
-The `default.md` template is used automatically when creating notes without specifying a template.
+Templates used automatically:
+- `default.md` - Regular notes created with `bnotes edit`
+- `daily.md` - Daily notes created with `bnotes daily`
+- `weekly.md` - Weekly notes created with `bnotes weekly`
+- `quarterly.md` - Quarterly notes created with `bnotes quarterly`
 
 ## Notes
 
