@@ -1,12 +1,12 @@
 # bnotes
 
-A personal note-taking CLI built around plain markdown files.
+A personal note-taking CLI built around plain markdown files, with a focus on tasks and periodic notes for tracking work tasks.
 
-This is a personal project built for my own use primarily via AI. It works for me but may have rough edges. Use at your own risk.
+As a note, this is a personal project built for my own use primarily via AI. It works for me but may have rough edges. Use at your own risk.
 
 ## Why
 
-At it's core, bnotes is a CLI for working with a directory of markdown files. It adds some basic utilities like search, task tracking, note linking and git sync, roughly based on some of the ideas behind Obsidian.
+At it's core, bnotes is a CLI for working with a directory of markdown files. It adds some basic utilities like search, task tracking, note linking and git sync, roughly based on some of the ideas behind Obsidian. The original manual testing was even done by running bnotes against my personal Obsidian knowledge repo.
 
 ## Installation
 
@@ -15,6 +15,8 @@ git clone https://github.com/belak/bnotes
 cd bnotes
 cargo install --path .
 ```
+
+I also personally recommend setting up a symlink or alias called `bn`, which makes working with bnotes even more convenient.
 
 ## Setup
 
@@ -46,7 +48,7 @@ Run `bnotes --help` for all commands.
 
 ## Templates
 
-Default templates are embedded in the binary and work out of the box. Customize by copying templates to your `.bnotes/templates/` directory.
+Default templates are embedded in the binary and work out of the box. Customize by copying templates to your `.bnotes/templates/` directory in your notes repo.
 
 See [templates/README.md](templates/README.md) for details.
 
