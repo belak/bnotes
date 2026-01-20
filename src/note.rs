@@ -225,6 +225,7 @@ pub struct Task {
     pub completed: bool,
     pub text: String,
     pub priority: Option<String>,
+    pub urgency: Option<String>,  // !!!, !!, !
 }
 
 impl Task {
@@ -282,6 +283,7 @@ impl Task {
                         completed: is_checked,
                         text,
                         priority,
+                        urgency: None,
                     });
 
                     in_task_item = false;
@@ -423,6 +425,7 @@ tags: [test]
             completed: false,
             text: "Do something".to_string(),
             priority: None,
+            urgency: None,
         };
 
         assert_eq!(task.id(), "test-note#3");
