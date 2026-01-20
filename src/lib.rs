@@ -483,7 +483,7 @@ daily_template = "custom-daily.md"
         let storage = Box::new(MemoryStorage::new());
         storage
             .write(
-                Path::new(".btools/templates/daily.md"),
+                Path::new(".bnotes/templates/daily.md"),
                 r#"---
 tags: [daily]
 created: {{datetime}}
@@ -541,7 +541,7 @@ created: {{datetime}}
         let storage = Box::new(MemoryStorage::new());
         storage
             .write(
-                Path::new(".btools/templates/default.md"),
+                Path::new(".bnotes/templates/default.md"),
                 r#"---
 tags: []
 created: {{datetime}}

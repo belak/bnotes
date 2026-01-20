@@ -1,11 +1,12 @@
 # Sample Templates
 
-Default templates (`default.md`, `daily.md`, `weekly.md`, `quarterly.md`) are embedded in the binary and work out of the box. Copy them to your `.templates/` directory to customize.
+Default templates (`default.md`, `daily.md`, `weekly.md`, `quarterly.md`) are embedded in the binary and work out of the box. Copy them to your `.bnotes/templates/` directory to customize.
 
 ## Usage
 
 ```bash
-cp templates/* ~/notes/.templates/
+mkdir -p ~/notes/.bnotes/templates
+cp templates/* ~/notes/.bnotes/templates/
 ```
 
 Or copy individual templates as needed.
@@ -19,7 +20,7 @@ These templates are embedded in bnotes and used automatically:
 - `weekly.md` - Used by `bnotes weekly`
 - `quarterly.md` - Used by `bnotes quarterly`
 
-Copy them to `.templates/` to customize. Your versions will override the embedded defaults.
+Copy them to `.bnotes/templates/` to customize. Your versions will override the embedded defaults.
 
 ## Other Templates
 

@@ -43,7 +43,7 @@ impl Default for PeriodicConfig {
 }
 
 fn default_template_dir() -> PathBuf {
-    PathBuf::from(".btools/templates")
+    PathBuf::from(".bnotes/templates")
 }
 
 fn default_daily_template() -> String {
@@ -121,7 +121,7 @@ daily_template = "custom-daily.md"
         let storage = MemoryStorage::new();
         let config = LibraryConfig::load_or_default(&storage);
 
-        assert_eq!(config.template_dir, PathBuf::from(".btools/templates"));
+        assert_eq!(config.template_dir, PathBuf::from(".bnotes/templates"));
         assert_eq!(config.periodic.daily_template, "daily.md");
         assert_eq!(config.periodic.weekly_template, "weekly.md");
         assert_eq!(config.periodic.quarterly_template, "quarterly.md");

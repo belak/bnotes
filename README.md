@@ -46,7 +46,7 @@ Run `bnotes --help` for all commands.
 
 ## Templates
 
-Default templates are embedded in the binary and work out of the box. Customize by copying templates to your `.templates/` directory.
+Default templates are embedded in the binary and work out of the box. Customize by copying templates to your `.bnotes/templates/` directory.
 
 See [templates/README.md](templates/README.md) for details.
 
