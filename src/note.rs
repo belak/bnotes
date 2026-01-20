@@ -252,8 +252,12 @@ impl Task {
         let (priority, task_text) = if rest.starts_with('(') {
             if let Some(end_paren) = rest.find(')') {
                 let priority_str = &rest[1..end_paren];
-                let remaining = rest[end_paren + 1..].trim();
-                (Some(priority_str.to_string()), remaining.to_string())
+                if priority_str.trim().is_empty() {
+                    (None, rest[end_paren + 1..].trim().to_string())
+                } else {
+                    let remaining = rest[end_paren + 1..].trim();
+                    (Some(priority_str.to_string()), remaining.to_string())
+                }
             } else {
                 (None, rest.to_string())
             }
@@ -648,5 +652,18 @@ title: Test Note
         assert_eq!(tasks.len(), 1);
         assert_eq!(tasks[0].urgency, None);
         assert_eq!(tasks[0].text, "Do this now!");
+    }
+
+    #[test]
+    fn test_parse_empty_priority() {
+        let content = "- [ ] !!! () Task with empty priority";
+        let note_path = PathBuf::from("test.md");
+        let note = Note::parse(&note_path, &format!("# Test\n\n{}", content)).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].urgency, Some("!!!".to_string()));
+        assert_eq!(tasks[0].priority, None);
+        assert_eq!(tasks[0].text, "Task with empty priority");
     }
 }
