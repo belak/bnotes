@@ -26,6 +26,7 @@ pub mod note;
 pub mod periodic;
 pub mod repository;
 pub mod storage;
+mod templates;
 
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -225,13 +226,17 @@ impl BNotes {
         let template_path = template_dir.join(&template);
 
         // Generate content
-        let content = if self.repo.storage.exists(&template_path) {
-            let template_content = self.repo.storage.read_to_string(&template_path)?;
-            note::render_template(&template_content, &period.identifier())
+        let template_content = if self.repo.storage.exists(&template_path) {
+            self.repo.storage.read_to_string(&template_path)?
         } else {
-            // Minimal note with just title
-            format!("# {}\n\n", period.identifier())
+            // Fall back to embedded template
+            let template_name = P::template_name();
+            templates::get_embedded_template(template_name)
+                .unwrap_or("# {{title}}\n\n")
+                .to_string()
         };
+
+        let content = note::render_template(&template_content, &period.identifier());
 
         // Write note
         self.repo.storage.write(&note_path, &content)?;
@@ -515,5 +520,40 @@ created: {{datetime}}
         assert_eq!(notes.len(), 1);
         assert_eq!(notes[0].title, "Test Note");
         assert!(notes[0].content.contains("# Test Note"));
+    }
+
+    #[test]
+    fn test_bnotes_create_note_with_embedded_default_template() {
+        // No templates in storage - should use embedded default
+        let storage = Box::new(MemoryStorage::new());
+        let bnotes = BNotes::with_defaults(storage);
+
+        let path = bnotes.create_note("Test Note", None).unwrap();
+
+        assert_eq!(path, Path::new("test-note.md"));
+
+        // Verify the note was created with embedded default template
+        let notes = bnotes.list_notes(&[]).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].title, "Test Note");
+        assert!(notes[0].content.contains("# Test Note"));
+    }
+
+    #[test]
+    fn test_bnotes_create_note_with_embedded_template() {
+        // No templates in storage - should use embedded template
+        let storage = Box::new(MemoryStorage::new());
+        let bnotes = BNotes::with_defaults(storage);
+
+        let path = bnotes.create_note("Test Daily", Some("daily")).unwrap();
+
+        assert_eq!(path, Path::new("test-daily.md"));
+
+        // Verify the note was created with embedded daily template
+        let notes = bnotes.list_notes(&[]).unwrap();
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].title, "Test Daily");
+        assert!(notes[0].content.contains("## Tasks"));
+        assert_eq!(notes[0].tags, vec!["daily"]);
     }
 }

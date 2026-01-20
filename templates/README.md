@@ -1,6 +1,6 @@
 # Sample Templates
 
-Copy these to your notes directory's `.templates/` folder.
+Default templates (`default.md`, `daily.md`, `weekly.md`, `quarterly.md`) are embedded in the binary and work out of the box. Copy them to your `.templates/` directory to customize.
 
 ## Usage
 
@@ -12,12 +12,14 @@ Or copy individual templates as needed.
 
 ## Templates Used Automatically
 
-These templates are used automatically by specific commands:
+These templates are embedded in bnotes and used automatically:
 
 - `default.md` - Used by `bnotes edit` when creating regular notes
 - `daily.md` - Used by `bnotes daily`
 - `weekly.md` - Used by `bnotes weekly`
 - `quarterly.md` - Used by `bnotes quarterly`
+
+Copy them to `.templates/` to customize. Your versions will override the embedded defaults.
 
 ## Other Templates
 

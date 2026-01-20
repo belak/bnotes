@@ -7,7 +7,6 @@
 use crate::note::{render_template, Note};
 use crate::storage::Storage;
 use anyhow::{Context, Result};
-use chrono::Utc;
 use pulldown_cmark::{Event, HeadingLevel, Parser, Tag, TagEnd};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -400,41 +399,30 @@ impl Repository {
         let content = if let Some(template) = template_name {
             let template_path = template_dir.join(format!("{}.md", template));
 
-            if !self.storage.exists(&template_path) {
+            // Try to load from filesystem first, then fall back to embedded
+            let template_content = if self.storage.exists(&template_path) {
+                self.storage.read_to_string(&template_path)
+                    .with_context(|| format!("Failed to read template: {}", template_path.display()))?
+            } else if let Some(embedded) = crate::templates::get_embedded_template(template) {
+                embedded.to_string()
+            } else {
                 anyhow::bail!("Template '{}' not found", template);
-            }
-
-            let template_content = self.storage.read_to_string(&template_path)
-                .with_context(|| format!("Failed to read template: {}", template_path.display()))?;
+            };
 
             render_template(&template_content, title)
         } else {
             // Try to use default.md template if it exists
             let default_template_path = template_dir.join("default.md");
 
-            if self.storage.exists(&default_template_path) {
-                let template_content = self.storage.read_to_string(&default_template_path)
-                    .with_context(|| format!("Failed to read default template: {}", default_template_path.display()))?;
-
-                render_template(&template_content, title)
+            let template_content = if self.storage.exists(&default_template_path) {
+                self.storage.read_to_string(&default_template_path)
+                    .with_context(|| format!("Failed to read default template: {}", default_template_path.display()))?
             } else {
-                // Fallback to hardcoded default
-                let now = Utc::now();
-                let datetime = now.to_rfc3339();
+                // Use embedded default template
+                crate::templates::DEFAULT.to_string()
+            };
 
-                format!(
-                    r#"---
-tags: []
-created: {}
-updated: {}
----
-
-# {}
-
-"#,
-                    datetime, datetime, title
-                )
-            }
+            render_template(&template_content, title)
         };
 
         // Write note
