@@ -12,6 +12,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use termcolor::{ColorChoice, WriteColor};
+use wildmatch::WildMatch;
 
 /// Validate that notes directory exists
 fn validate_notes_dir(notes_dir: &Path) -> Result<()> {
@@ -709,6 +710,7 @@ pub fn task_list(
     notes_dir: &Path,
     tags: &[String],
     status: Option<String>,
+    note_pattern: Option<&str>,
     sort_order: bnotes::TaskSortOrder,
     color: ColorChoice,
 ) -> Result<()> {
@@ -716,7 +718,15 @@ pub fn task_list(
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
-    let tasks = bnotes.list_tasks(tags, status.as_deref(), sort_order)?;
+    let mut tasks = bnotes.list_tasks(tags, status.as_deref(), sort_order)?;
+
+    // Filter by note pattern if provided
+    if let Some(pattern) = note_pattern {
+        // Use lowercase pattern and titles for case-insensitive matching
+        let pattern_lower = pattern.to_lowercase();
+        let matcher = WildMatch::new(&pattern_lower);
+        tasks.retain(|task| matcher.matches(&task.note_title.to_lowercase()));
+    }
 
     let mut stdout = colors::create_stdout(color);
 

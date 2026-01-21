@@ -71,6 +71,14 @@ enum Commands {
 
     /// List open tasks (alias for 'task list --status open')
     Tasks {
+        /// Filter by note name (supports * wildcard)
+        #[arg(long)]
+        note: Option<String>,
+
+        /// Filter by status (open, done, all)
+        #[arg(long, default_value = "open")]
+        status: String,
+
         /// Sort order: comma-separated fields (urgency, priority, id)
         #[arg(long, default_value = "urgency,priority,id")]
         sort_order: String,
@@ -166,6 +174,10 @@ enum NoteCommands {
 enum TaskCommands {
     /// List tasks across all notes
     List {
+        /// Filter by note name (supports * wildcard)
+        #[arg(long)]
+        note: Option<String>,
+
         /// Filter by tags
         #[arg(long = "tag")]
         tags: Vec<String>,
@@ -211,10 +223,10 @@ fn main() -> Result<()> {
         Commands::Edit { title, template } => {
             cli::commands::edit(&notes_dir, &title, template)?;
         }
-        Commands::Tasks { sort_order } => {
+        Commands::Tasks { note, status, sort_order } => {
             let sort_order = bnotes::TaskSortOrder::parse(&sort_order)
                 .context("Invalid sort order")?;
-            cli::commands::task_list(&notes_dir, &[], Some("open".to_string()), sort_order, cli_args.color)?;
+            cli::commands::task_list(&notes_dir, &[], Some(status), note.as_deref(), sort_order, cli_args.color)?;
         }
         Commands::Doctor => {
             cli::commands::doctor(&notes_dir, cli_args.color)?;
@@ -240,10 +252,10 @@ fn main() -> Result<()> {
             }
         },
         Commands::Task(task_cmd) => match task_cmd {
-            TaskCommands::List { tags, status, sort_order } => {
+            TaskCommands::List { note, tags, status, sort_order } => {
                 let sort_order = bnotes::TaskSortOrder::parse(&sort_order)
                     .context("Invalid sort order")?;
-                cli::commands::task_list(&notes_dir, &tags, status, sort_order, cli_args.color)?;
+                cli::commands::task_list(&notes_dir, &tags, status, note.as_deref(), sort_order, cli_args.color)?;
             }
             TaskCommands::Show { task_id } => {
                 cli::commands::task_show(&notes_dir, &task_id, cli_args.color)?;
