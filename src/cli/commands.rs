@@ -835,40 +835,6 @@ pub fn task_list(
     Ok(())
 }
 
-pub fn task_show(notes_dir: &Path, task_id: &str, color: ColorChoice) -> Result<()> {
-    validate_notes_dir(notes_dir)?;
-    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
-    let bnotes = BNotes::with_defaults(storage);
-
-    let (task, note) = bnotes.get_task(task_id)?;
-
-    let mut stdout = colors::create_stdout(color);
-
-    // Display task with context
-    write!(stdout, "Task: ")?;
-    stdout.set_color(&colors::highlight())?;
-    writeln!(stdout, "{}", task.id())?;
-    stdout.reset()?;
-
-    write!(stdout, "Note: ")?;
-    stdout.set_color(&colors::dim())?;
-    writeln!(stdout, "{}", task.note_title)?;
-    stdout.reset()?;
-
-    writeln!(
-        stdout,
-        "Status: {}",
-        if task.completed { "Done" } else { "Open" }
-    )?;
-    writeln!(stdout, "\n{}", task.text)?;
-
-    // Show a bit more context from the note
-    writeln!(stdout, "\n--- Context from note ---")?;
-    writeln!(stdout, "{}", note.content)?;
-
-    Ok(())
-}
-
 // ============================================================================
 // Periodic Commands
 // ============================================================================

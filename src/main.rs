@@ -194,12 +194,6 @@ enum TaskCommands {
         #[arg(long, default_value = "urgency,priority,id")]
         sort_order: String,
     },
-
-    /// Show a specific task with context
-    Show {
-        /// Task ID (e.g., "project-notes#2")
-        task_id: String,
-    },
 }
 
 #[derive(Subcommand)]
@@ -260,9 +254,6 @@ fn main() -> Result<()> {
                 let sort_order = bnotes::TaskSortOrder::parse(&sort_order)
                     .context("Invalid sort order")?;
                 cli::commands::task_list(&notes_dir, &tags, status, note.as_deref(), sort_order, cli_args.color)?;
-            }
-            TaskCommands::Show { task_id } => {
-                cli::commands::task_show(&notes_dir, &task_id, cli_args.color)?;
             }
         },
         Commands::Daily {

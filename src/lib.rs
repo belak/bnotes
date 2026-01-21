@@ -227,7 +227,11 @@ impl BNotes {
                 let cmp = match field {
                     SortField::Urgency => Self::compare_urgency(&a.urgency, &b.urgency),
                     SortField::Priority => Self::compare_priority(&a.priority, &b.priority),
-                    SortField::Id => a.id().cmp(&b.id()),
+                    SortField::Id => {
+                        // Sort by note title first, then by index
+                        a.note_title.cmp(&b.note_title)
+                            .then_with(|| a.index.cmp(&b.index))
+                    }
                 };
                 if cmp != std::cmp::Ordering::Equal {
                     return cmp;
@@ -237,46 +241,6 @@ impl BNotes {
         });
 
         Ok(tasks)
-    }
-
-    /// Get a specific task by its ID (format: "filename#index")
-    ///
-    /// Returns (task, note) tuple
-    pub fn get_task(&self, task_id: &str) -> Result<(note::Task, note::Note)> {
-        // Parse task ID (format: "filename#index")
-        let parts: Vec<&str> = task_id.split('#').collect();
-        if parts.len() != 2 {
-            anyhow::bail!("Invalid task ID format. Expected 'filename#index'");
-        }
-
-        let filename = parts[0];
-        let index: usize = parts[1]
-            .parse()
-            .map_err(|_| anyhow::anyhow!("Invalid task index: {}", parts[1]))?;
-
-        // Find the note
-        let notes = self.repo.discover_notes()?;
-        let note = notes
-            .iter()
-            .find(|n| {
-                n.path
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .map(|s| s == filename)
-                    .unwrap_or(false)
-            })
-            .ok_or_else(|| anyhow::anyhow!("Note not found: {}", filename))?;
-
-        // Extract tasks from the note
-        let tasks = note::Task::extract_from_note(note);
-
-        // Find the specific task
-        let task = tasks
-            .into_iter()
-            .find(|t| t.index == index)
-            .ok_or_else(|| anyhow::anyhow!("Task not found: {}", task_id))?;
-
-        Ok((task, note.clone()))
     }
 
     /// Open or create a periodic note for a given period
@@ -739,9 +703,11 @@ title: B Note
 
         // Should be sorted by ID (filename#index), ignoring priority
         assert_eq!(tasks.len(), 2);
-        assert_eq!(tasks[0].id(), "a-note#1");
+        assert_eq!(tasks[0].note_title, "A Note");
+        assert_eq!(tasks[0].index, 1);
         assert_eq!(tasks[0].priority, Some("C".to_string()));
-        assert_eq!(tasks[1].id(), "b-note#1");
+        assert_eq!(tasks[1].note_title, "B Note");
+        assert_eq!(tasks[1].index, 1);
         assert_eq!(tasks[1].priority, Some("A".to_string()));
     }
 

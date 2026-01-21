@@ -354,17 +354,6 @@ impl Task {
 
         tasks
     }
-
-    /// Get the task ID in format "filename#index"
-    pub fn id(&self) -> String {
-        let filename = self
-            .note_path
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("unknown");
-
-        format!("{}#{}", filename, self.index)
-    }
 }
 
 // ============================================================================
@@ -474,22 +463,6 @@ tags: [test]
 
         assert_eq!(tasks[4].priority, Some("C".to_string()));
         assert_eq!(tasks[4].text, "Low priority task");
-    }
-
-    #[test]
-    fn test_task_id() {
-        let task = Task {
-            note_path: PathBuf::from("test-note.md"),
-            note_title: "Test Note".to_string(),
-            index: 3,
-            completed: false,
-            text: "Do something".to_string(),
-            priority: None,
-            urgency: None,
-            tags: vec![],
-        };
-
-        assert_eq!(task.id(), "test-note#3");
     }
 
     #[test]
