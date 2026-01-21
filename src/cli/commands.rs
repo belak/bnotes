@@ -718,7 +718,7 @@ pub fn task_list(
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
 
-    let mut tasks = bnotes.list_tasks(tags, status.as_deref(), sort_order)?;
+    let mut tasks = bnotes.list_tasks(&[], status.as_deref(), sort_order)?;
 
     // Filter by note pattern if provided
     if let Some(pattern) = note_pattern {
@@ -726,6 +726,25 @@ pub fn task_list(
         let pattern_lower = pattern.to_lowercase();
         let matcher = WildMatch::new(&pattern_lower);
         tasks.retain(|task| matcher.matches(&task.note_title.to_lowercase()));
+    }
+
+    // Filter by tags if provided (AND logic with hierarchical matching)
+    if !tags.is_empty() {
+        // Normalize and deduplicate filter tags
+        let mut filter_tags: Vec<String> = tags.iter()
+            .map(|t| t.to_lowercase())
+            .collect();
+        filter_tags.sort();
+        filter_tags.dedup();
+
+        tasks.retain(|task| {
+            filter_tags.iter().all(|filter_tag| {
+                task.tags.iter().any(|task_tag| {
+                    // Hierarchical: task_tag equals or starts with filter_tag/
+                    task_tag == filter_tag || task_tag.starts_with(&format!("{}/", filter_tag))
+                })
+            })
+        });
     }
 
     let mut stdout = colors::create_stdout(color);
@@ -793,6 +812,15 @@ pub fn task_list(
 
         // Task text
         write!(stdout, "{} ", task.text)?;
+
+        // Tags (if any)
+        if !task.tags.is_empty() {
+            stdout.set_color(&colors::highlight())?; // Cyan, same as task ID
+            for tag in &task.tags {
+                write!(stdout, "@{} ", tag)?;
+            }
+            stdout.reset()?;
+        }
 
         // "from [note]" in dim
         stdout.set_color(&colors::dim())?;

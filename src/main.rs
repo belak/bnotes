@@ -75,6 +75,10 @@ enum Commands {
         #[arg(long)]
         note: Option<String>,
 
+        /// Filter by tag (can be specified multiple times)
+        #[arg(long = "tag")]
+        tags: Vec<String>,
+
         /// Filter by status (open, done, all)
         #[arg(long, default_value = "open")]
         status: String,
@@ -223,10 +227,10 @@ fn main() -> Result<()> {
         Commands::Edit { title, template } => {
             cli::commands::edit(&notes_dir, &title, template)?;
         }
-        Commands::Tasks { note, status, sort_order } => {
+        Commands::Tasks { note, tags, status, sort_order } => {
             let sort_order = bnotes::TaskSortOrder::parse(&sort_order)
                 .context("Invalid sort order")?;
-            cli::commands::task_list(&notes_dir, &[], Some(status), note.as_deref(), sort_order, cli_args.color)?;
+            cli::commands::task_list(&notes_dir, &tags, Some(status), note.as_deref(), sort_order, cli_args.color)?;
         }
         Commands::Doctor => {
             cli::commands::doctor(&notes_dir, cli_args.color)?;

@@ -226,9 +226,44 @@ pub struct Task {
     pub text: String,
     pub priority: Option<String>,
     pub urgency: Option<String>,  // !!!, !!, !
+    pub tags: Vec<String>,  // Tags extracted from task text (lowercase, without @ prefix)
 }
 
 impl Task {
+    /// Parse tags from the end of text
+    /// Returns (tags, remaining_text)
+    /// Tags are returned in lowercase without @ prefix, deduplicated
+    fn parse_tags(text: &str) -> (Vec<String>, String) {
+        let trimmed = text.trim();
+        let words: Vec<&str> = trimmed.split_whitespace().collect();
+
+        // Find where tags start (scan backwards for @-prefixed words)
+        let mut tag_start_idx = words.len();
+        for (i, word) in words.iter().enumerate().rev() {
+            if word.starts_with('@') {
+                tag_start_idx = i;
+            } else {
+                break; // Stop at first non-tag
+            }
+        }
+
+        // Extract tags (remove @ prefix, convert to lowercase, deduplicate)
+        let mut tags: Vec<String> = words[tag_start_idx..]
+            .iter()
+            .filter_map(|w| w.strip_prefix('@'))
+            .map(|t| t.to_lowercase())
+            .collect();
+
+        // Deduplicate while preserving order
+        let mut seen = std::collections::HashSet::new();
+        tags.retain(|tag| seen.insert(tag.clone()));
+
+        // Remaining text (everything before tags)
+        let text = words[..tag_start_idx].join(" ");
+
+        (tags, text)
+    }
+
     /// Parse urgency and priority from task text
     /// Format: [urgency] [(priority)] task text
     /// Urgency: !!!, !!, ! (must have space after)
@@ -297,7 +332,8 @@ impl Task {
                 Event::End(TagEnd::Item) if in_task_item => {
                     task_index += 1;
 
-                    let (urgency, priority, text) = Self::parse_urgency_and_priority(&task_text);
+                    let (urgency, priority, rest) = Self::parse_urgency_and_priority(&task_text);
+                    let (tags, text) = Self::parse_tags(&rest);
 
                     tasks.push(Task {
                         note_path: note.path.clone(),
@@ -307,6 +343,7 @@ impl Task {
                         text,
                         priority,
                         urgency,
+                        tags,
                     });
 
                     in_task_item = false;
@@ -449,6 +486,7 @@ tags: [test]
             text: "Do something".to_string(),
             priority: None,
             urgency: None,
+            tags: vec![],
         };
 
         assert_eq!(task.id(), "test-note#3");
