@@ -777,7 +777,7 @@ pub fn task_list(
         write!(stdout, "{:<width$}", task.id(), width = max_id_width)?;
         stdout.reset()?;
 
-        write!(stdout, "  ")?;
+        write!(stdout, " ")?;
 
         // Checkbox - [x] in green, [ ] default
         if task.completed {
@@ -788,7 +788,7 @@ pub fn task_list(
             write!(stdout, "[ ]")?;
         }
 
-        write!(stdout, "  ")?;
+        write!(stdout, " ")?;
 
         // Urgency: right-aligned with dynamic width
         let urgency_str = task.urgency.as_ref()
@@ -797,7 +797,7 @@ pub fn task_list(
         write!(stdout, "{:>width$}", urgency_str, width = max_urgency_width)?;
 
         if max_urgency_width > 0 {
-            write!(stdout, "  ")?;
+            write!(stdout, " ")?;
         }
 
         // Priority: dynamic width
@@ -807,7 +807,7 @@ pub fn task_list(
         write!(stdout, "{:<width$}", priority_str, width = max_priority_width)?;
 
         if max_priority_width > 0 {
-            write!(stdout, "  ")?;
+            write!(stdout, " ")?;
         }
 
         // Task text
