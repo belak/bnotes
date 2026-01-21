@@ -725,24 +725,30 @@ pub fn task_list(
         return Ok(());
     }
 
-    // Display tasks
+    // Calculate maximum column widths for alignment
+    let max_id_width = tasks.iter()
+        .map(|t| t.id().len())
+        .max()
+        .unwrap_or(0);
+
+    let max_urgency_width = tasks.iter()
+        .map(|t| t.urgency.as_ref().map(|u| u.to_string().len()).unwrap_or(0))
+        .max()
+        .unwrap_or(0);
+
+    let max_priority_width = tasks.iter()
+        .map(|t| t.priority.as_ref().map(|p| format!("({})", p).len()).unwrap_or(0))
+        .max()
+        .unwrap_or(0);
+
+    // Display tasks with aligned columns
     for task in &tasks {
-        // Task ID in cyan
+        // Task ID in cyan, left-aligned with padding
         stdout.set_color(&colors::highlight())?;
-        write!(stdout, "{}", task.id())?;
+        write!(stdout, "{:<width$}", task.id(), width = max_id_width)?;
         stdout.reset()?;
 
         write!(stdout, "  ")?;
-
-        // Show urgency if present
-        if let Some(urgency) = &task.urgency {
-            write!(stdout, "{} ", urgency)?;
-        }
-
-        // Show priority if present
-        if let Some(priority) = &task.priority {
-            write!(stdout, "({}) ", priority)?;
-        }
 
         // Checkbox - [x] in green, [ ] default
         if task.completed {
@@ -753,8 +759,30 @@ pub fn task_list(
             write!(stdout, "[ ]")?;
         }
 
-        // Task text in default
-        write!(stdout, " {} ", task.text)?;
+        write!(stdout, "  ")?;
+
+        // Urgency: right-aligned with dynamic width
+        let urgency_str = task.urgency.as_ref()
+            .map(|u| u.to_string())
+            .unwrap_or_default();
+        write!(stdout, "{:>width$}", urgency_str, width = max_urgency_width)?;
+
+        if max_urgency_width > 0 {
+            write!(stdout, "  ")?;
+        }
+
+        // Priority: dynamic width
+        let priority_str = task.priority.as_ref()
+            .map(|p| format!("({})", p))
+            .unwrap_or_default();
+        write!(stdout, "{:<width$}", priority_str, width = max_priority_width)?;
+
+        if max_priority_width > 0 {
+            write!(stdout, "  ")?;
+        }
+
+        // Task text
+        write!(stdout, "{} ", task.text)?;
 
         // "from [note]" in dim
         stdout.set_color(&colors::dim())?;
