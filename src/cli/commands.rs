@@ -755,8 +755,8 @@ pub fn task_list(
     }
 
     // Calculate maximum column widths for alignment
-    let max_id_width = tasks.iter()
-        .map(|t| t.id().len())
+    let max_note_width = tasks.iter()
+        .map(|t| t.note_title.len())
         .max()
         .unwrap_or(0);
 
@@ -772,9 +772,9 @@ pub fn task_list(
 
     // Display tasks with aligned columns
     for task in &tasks {
-        // Task ID in cyan, left-aligned with padding
+        // Note name in cyan, left-aligned with padding
         stdout.set_color(&colors::highlight())?;
-        write!(stdout, "{:<width$}", task.id(), width = max_id_width)?;
+        write!(stdout, "{:<width$}", task.note_title, width = max_note_width)?;
         stdout.reset()?;
 
         write!(stdout, " ")?;
@@ -815,17 +815,14 @@ pub fn task_list(
 
         // Tags (if any)
         if !task.tags.is_empty() {
-            stdout.set_color(&colors::highlight())?; // Cyan, same as task ID
+            stdout.set_color(&colors::highlight())?; // Cyan, same as note name
             for tag in &task.tags {
                 write!(stdout, "@{} ", tag)?;
             }
             stdout.reset()?;
         }
 
-        // "from [note]" in dim
-        stdout.set_color(&colors::dim())?;
-        writeln!(stdout, "(from {})", task.note_title)?;
-        stdout.reset()?;
+        writeln!(stdout)?;
     }
 
     writeln!(
