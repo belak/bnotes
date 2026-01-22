@@ -220,7 +220,7 @@ pub fn search(notes_dir: &Path, query: &str, limit: usize, color: ColorChoice) -
     Ok(())
 }
 
-pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>) -> Result<()> {
+pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>, print_path: bool) -> Result<()> {
     validate_notes_dir(notes_dir)?;
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
     let bnotes = BNotes::with_defaults(storage);
@@ -229,6 +229,10 @@ pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>) -> Res
 
     let relative_path = match matches.len() {
         0 => {
+            if print_path {
+                anyhow::bail!("Note doesn't exist: {}", title);
+            }
+
             // Note doesn't exist - prompt to create it
             print!("Note doesn't exist. Create it? [Y/n] ");
             io::stdout().flush()?;
@@ -254,7 +258,7 @@ pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>) -> Res
         }
     };
 
-    launch_editor(notes_dir, &relative_path, &bnotes)?;
+    launch_editor(notes_dir, &relative_path, &bnotes, print_path)?;
     Ok(())
 }
 
@@ -840,6 +844,7 @@ pub fn periodic<P: bnotes::PeriodType>(
     notes_dir: &Path,
     action: PeriodicAction,
     template_override: Option<String>,
+    print_path: bool,
 ) -> Result<()> {
     validate_notes_dir(notes_dir)?;
     let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
@@ -853,18 +858,18 @@ pub fn periodic<P: bnotes::PeriodType>(
                 P::current()
             };
 
-            periodic_open::<P>(notes_dir, &bnotes, period, template_override)?;
+            periodic_open::<P>(notes_dir, &bnotes, period, template_override, print_path)?;
         }
         PeriodicAction::List => {
             periodic_list::<P>(&bnotes)?;
         }
         PeriodicAction::Prev => {
             let note_path = bnotes.navigate_periodic::<P>("prev", template_override.as_deref())?;
-            launch_editor(notes_dir, &note_path, &bnotes)?;
+            launch_editor(notes_dir, &note_path, &bnotes, print_path)?;
         }
         PeriodicAction::Next => {
             let note_path = bnotes.navigate_periodic::<P>("next", template_override.as_deref())?;
-            launch_editor(notes_dir, &note_path, &bnotes)?;
+            launch_editor(notes_dir, &note_path, &bnotes, print_path)?;
         }
     }
 
@@ -876,12 +881,17 @@ fn periodic_open<P: bnotes::PeriodType>(
     bnotes: &bnotes::BNotes,
     period: P,
     template_override: Option<String>,
+    print_path: bool,
 ) -> Result<()> {
     let note_path = PathBuf::from(period.filename());
     let full_path = notes_dir.join(&note_path);
 
     // If note doesn't exist, prompt to create
     if !full_path.exists() {
+        if print_path {
+            anyhow::bail!("Note doesn't exist: {}", period.identifier());
+        }
+
         print!(
             "{} {} doesn't exist. Create it? [Y/n] ",
             match P::template_name() {
@@ -906,7 +916,7 @@ fn periodic_open<P: bnotes::PeriodType>(
         bnotes.open_periodic(period, template_override.as_deref())?;
     }
 
-    launch_editor(notes_dir, &note_path, bnotes)?;
+    launch_editor(notes_dir, &note_path, bnotes, print_path)?;
     Ok(())
 }
 
@@ -925,8 +935,14 @@ fn periodic_list<P: bnotes::PeriodType>(bnotes: &bnotes::BNotes) -> Result<()> {
     Ok(())
 }
 
-fn launch_editor(notes_dir: &Path, note_path: &PathBuf, bnotes: &BNotes) -> Result<()> {
+fn launch_editor(notes_dir: &Path, note_path: &PathBuf, bnotes: &BNotes, print_path: bool) -> Result<()> {
     let full_path = notes_dir.join(note_path);
+
+    // If print_path flag is set, print the path and exit
+    if print_path {
+        println!("{}", full_path.display());
+        return Ok(());
+    }
 
     // Capture state before editing (if possible)
     let before_state = bnotes::capture_note_state(&full_path).ok();

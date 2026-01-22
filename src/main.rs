@@ -67,6 +67,10 @@ enum Commands {
         /// Template to use if creating a new note
         #[arg(long)]
         template: Option<String>,
+
+        /// Print the path to the note instead of opening it
+        #[arg(long, short = 'p')]
+        print_path: bool,
     },
 
     /// List open tasks (alias for 'task list --status open')
@@ -118,6 +122,10 @@ enum Commands {
         #[arg(long)]
         template: Option<String>,
 
+        /// Print the path to the note instead of opening it
+        #[arg(long, short = 'p')]
+        print_path: bool,
+
         #[command(subcommand)]
         subcommand: Option<PeriodicSubcommands>,
     },
@@ -131,6 +139,10 @@ enum Commands {
         #[arg(long)]
         template: Option<String>,
 
+        /// Print the path to the note instead of opening it
+        #[arg(long, short = 'p')]
+        print_path: bool,
+
         #[command(subcommand)]
         subcommand: Option<PeriodicSubcommands>,
     },
@@ -143,6 +155,10 @@ enum Commands {
         /// Override configured template
         #[arg(long)]
         template: Option<String>,
+
+        /// Print the path to the note instead of opening it
+        #[arg(long, short = 'p')]
+        print_path: bool,
 
         #[command(subcommand)]
         subcommand: Option<PeriodicSubcommands>,
@@ -218,8 +234,8 @@ fn main() -> Result<()> {
         Commands::Search { query, limit } => {
             cli::commands::search(&notes_dir, &query, limit, cli_args.color)?;
         }
-        Commands::Edit { title, template } => {
-            cli::commands::edit(&notes_dir, &title, template)?;
+        Commands::Edit { title, template, print_path } => {
+            cli::commands::edit(&notes_dir, &title, template, print_path)?;
         }
         Commands::Tasks { note, tags, status, sort_order } => {
             let sort_order = bnotes::TaskSortOrder::parse(&sort_order)
@@ -259,6 +275,7 @@ fn main() -> Result<()> {
         Commands::Daily {
             date,
             template,
+            print_path,
             subcommand,
         } => {
             use bnotes::Daily;
@@ -279,11 +296,12 @@ fn main() -> Result<()> {
                 cli::PeriodicAction::Open(date)
             };
 
-            cli::commands::periodic::<Daily>(&notes_dir, action, template)?;
+            cli::commands::periodic::<Daily>(&notes_dir, action, template, print_path)?;
         }
         Commands::Weekly {
             date,
             template,
+            print_path,
             subcommand,
         } => {
             use bnotes::Weekly;
@@ -304,11 +322,12 @@ fn main() -> Result<()> {
                 cli::PeriodicAction::Open(date)
             };
 
-            cli::commands::periodic::<Weekly>(&notes_dir, action, template)?;
+            cli::commands::periodic::<Weekly>(&notes_dir, action, template, print_path)?;
         }
         Commands::Quarterly {
             date,
             template,
+            print_path,
             subcommand,
         } => {
             use bnotes::Quarterly;
@@ -329,7 +348,7 @@ fn main() -> Result<()> {
                 cli::PeriodicAction::Open(date)
             };
 
-            cli::commands::periodic::<Quarterly>(&notes_dir, action, template)?;
+            cli::commands::periodic::<Quarterly>(&notes_dir, action, template, print_path)?;
         }
     }
 
