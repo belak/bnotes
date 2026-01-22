@@ -28,11 +28,20 @@ pub mod repository;
 pub mod storage;
 mod templates;
 
+use anyhow::Context;
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 /// Result type alias using anyhow::Error
 pub type Result<T> = std::result::Result<T, anyhow::Error>;
+
+/// Capture the current state of a note file for change detection
+/// Returns modification time that can be compared to detect changes
+pub fn capture_note_state(path: &Path) -> Result<SystemTime> {
+    let metadata = std::fs::metadata(path)?;
+    metadata.modified().context("Failed to get modification time")
+}
 
 /// Task sort order - comma-separated list of fields
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -345,6 +354,100 @@ impl BNotes {
     pub fn check_health(&self) -> Result<repository::HealthReport> {
         let notes = self.repo.discover_notes()?;
         Ok(repository::check_health(&notes))
+    }
+
+    /// Parse frontmatter from note content
+    /// Returns (frontmatter, body_content) where body is everything after frontmatter
+    fn parse_frontmatter(&self, content: &str) -> Result<(Option<note::Frontmatter>, String)> {
+        use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
+
+        let mut options = Options::empty();
+        options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
+
+        let parser = Parser::new_ext(content, options);
+        let mut in_metadata = false;
+        let mut yaml_content = String::new();
+        let mut found_metadata = false;
+        let mut body_start = 0;
+
+        // Find the end of frontmatter to determine where body starts
+        let mut current_pos = 0;
+        for event in parser {
+            match event {
+                Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
+                    in_metadata = true;
+                    found_metadata = true;
+                }
+                Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
+                    in_metadata = false;
+                    // Body starts after frontmatter block
+                    // Find the position after the closing ---
+                    if let Some(pos) = content[current_pos..].find("---\n") {
+                        body_start = current_pos + pos + 4; // Skip past "---\n"
+                    }
+                }
+                Event::Text(text) if in_metadata => {
+                    yaml_content.push_str(&text);
+                }
+                _ => {}
+            }
+            current_pos = content.len();
+        }
+
+        let frontmatter = if found_metadata && !yaml_content.is_empty() {
+            match serde_yaml::from_str::<note::Frontmatter>(&yaml_content) {
+                Ok(fm) => Some(fm),
+                Err(e) => {
+                    anyhow::bail!("Failed to parse frontmatter: {}", e);
+                }
+            }
+        } else {
+            None
+        };
+
+        let body = if body_start > 0 && body_start < content.len() {
+            &content[body_start..]
+        } else {
+            content
+        };
+
+        Ok((frontmatter, body.to_string()))
+    }
+
+    /// Update the 'updated' timestamp in a note's frontmatter
+    pub fn update_note_timestamp(&self, note_path: &Path) -> Result<()> {
+        use chrono::Utc;
+
+        // Read the note file
+        let content = self.repo.storage().read_to_string(note_path)?;
+
+        // Parse to extract frontmatter and body
+        let (frontmatter_opt, body) = self.parse_frontmatter(&content)?;
+
+        // Skip if no frontmatter
+        let mut frontmatter = match frontmatter_opt {
+            Some(fm) => fm,
+            None => return Ok(()), // No frontmatter, nothing to update
+        };
+
+        // Update the 'updated' field with current UTC timestamp
+        frontmatter.updated = Some(Utc::now());
+
+        // Serialize frontmatter back to YAML
+        let yaml = serde_yaml::to_string(&frontmatter)?;
+
+        // Reconstruct file: frontmatter + body
+        let new_content = format!("---\n{}---\n{}", yaml, body);
+
+        // Write back to file
+        self.repo.storage().write(note_path, &new_content)?;
+
+        Ok(())
+    }
+
+    /// Get the library configuration
+    pub fn config(&self) -> &config::LibraryConfig {
+        &self.config
     }
 }
 

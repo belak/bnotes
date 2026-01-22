@@ -253,6 +253,11 @@ impl Repository {
         Self { storage }
     }
 
+    /// Get a reference to the storage
+    pub(crate) fn storage(&self) -> &dyn Storage {
+        &*self.storage
+    }
+
     /// Discover all notes in the repository
     pub fn discover_notes(&self) -> Result<Vec<Note>> {
         let mut notes = Vec::new();

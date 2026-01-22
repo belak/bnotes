@@ -77,6 +77,9 @@ pub struct Frontmatter {
     pub created: Option<DateTime<Utc>>,
     #[serde(default, deserialize_with = "deserialize_datetime")]
     pub updated: Option<DateTime<Utc>>,
+    /// Preserve any unknown fields
+    #[serde(flatten)]
+    pub extra: serde_yaml::Value,
 }
 
 // ============================================================================

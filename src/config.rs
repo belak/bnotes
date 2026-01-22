@@ -19,6 +19,8 @@ pub struct LibraryConfig {
     pub template_dir: PathBuf,
     #[serde(default)]
     pub periodic: PeriodicConfig,
+    #[serde(default = "default_auto_update_timestamp")]
+    pub auto_update_timestamp: bool,
 }
 
 /// Configuration for periodic notes
@@ -58,11 +60,16 @@ fn default_quarterly_template() -> String {
     "quarterly.md".to_string()
 }
 
+fn default_auto_update_timestamp() -> bool {
+    true // Enabled by default
+}
+
 impl Default for LibraryConfig {
     fn default() -> Self {
         Self {
             template_dir: default_template_dir(),
             periodic: PeriodicConfig::default(),
+            auto_update_timestamp: default_auto_update_timestamp(),
         }
     }
 }

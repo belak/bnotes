@@ -227,7 +227,7 @@ pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>) -> Res
 
     let matches = bnotes.find_note_by_title(title)?;
 
-    let note_path = match matches.len() {
+    let relative_path = match matches.len() {
         0 => {
             // Note doesn't exist - prompt to create it
             print!("Note doesn't exist. Create it? [Y/n] ");
@@ -242,10 +242,9 @@ pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>) -> Res
             }
 
             // Create the note
-            let relative_path = bnotes.create_note(title, template_name.as_deref())?;
-            notes_dir.join(relative_path)
+            bnotes.create_note(title, template_name.as_deref())?
         }
-        1 => notes_dir.join(&matches[0].path),
+        1 => matches[0].path.clone(),
         _ => {
             println!("Multiple notes found with title '{}':", title);
             for note in &matches {
@@ -255,17 +254,7 @@ pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>) -> Res
         }
     };
 
-    // Open in editor
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
-    let status = Command::new(&editor)
-        .arg(&note_path)
-        .status()
-        .with_context(|| format!("Failed to open editor: {}", editor))?;
-
-    if !status.success() {
-        anyhow::bail!("Editor exited with status: {}", status);
-    }
-
+    launch_editor(notes_dir, &relative_path, &bnotes)?;
     Ok(())
 }
 
@@ -871,11 +860,11 @@ pub fn periodic<P: bnotes::PeriodType>(
         }
         PeriodicAction::Prev => {
             let note_path = bnotes.navigate_periodic::<P>("prev", template_override.as_deref())?;
-            launch_editor(notes_dir, &note_path)?;
+            launch_editor(notes_dir, &note_path, &bnotes)?;
         }
         PeriodicAction::Next => {
             let note_path = bnotes.navigate_periodic::<P>("next", template_override.as_deref())?;
-            launch_editor(notes_dir, &note_path)?;
+            launch_editor(notes_dir, &note_path, &bnotes)?;
         }
     }
 
@@ -917,7 +906,7 @@ fn periodic_open<P: bnotes::PeriodType>(
         bnotes.open_periodic(period, template_override.as_deref())?;
     }
 
-    launch_editor(notes_dir, &note_path)?;
+    launch_editor(notes_dir, &note_path, &bnotes)?;
     Ok(())
 }
 
@@ -936,8 +925,12 @@ fn periodic_list<P: bnotes::PeriodType>(bnotes: &bnotes::BNotes) -> Result<()> {
     Ok(())
 }
 
-fn launch_editor(notes_dir: &Path, note_path: &PathBuf) -> Result<()> {
+fn launch_editor(notes_dir: &Path, note_path: &PathBuf, bnotes: &BNotes) -> Result<()> {
     let full_path = notes_dir.join(note_path);
+
+    // Capture state before editing (if possible)
+    let before_state = bnotes::capture_note_state(&full_path).ok();
+
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vim".to_string());
 
     let status = Command::new(&editor)
@@ -947,6 +940,19 @@ fn launch_editor(notes_dir: &Path, note_path: &PathBuf) -> Result<()> {
 
     if !status.success() {
         anyhow::bail!("Editor exited with status: {}", status);
+    }
+
+    // Update timestamp if enabled and file changed
+    if bnotes.config().auto_update_timestamp {
+        if let Some(before) = before_state {
+            if let Ok(after) = bnotes::capture_note_state(&full_path) {
+                if before != after {
+                    if let Err(e) = bnotes.update_note_timestamp(note_path) {
+                        eprintln!("Warning: Failed to update timestamp: {}", e);
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
