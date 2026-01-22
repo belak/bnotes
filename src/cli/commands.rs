@@ -906,7 +906,7 @@ fn periodic_open<P: bnotes::PeriodType>(
         bnotes.open_periodic(period, template_override.as_deref())?;
     }
 
-    launch_editor(notes_dir, &note_path, &bnotes)?;
+    launch_editor(notes_dir, &note_path, bnotes)?;
     Ok(())
 }
 
@@ -943,16 +943,13 @@ fn launch_editor(notes_dir: &Path, note_path: &PathBuf, bnotes: &BNotes) -> Resu
     }
 
     // Update timestamp if enabled and file changed
-    if bnotes.config().auto_update_timestamp {
-        if let Some(before) = before_state {
-            if let Ok(after) = bnotes::capture_note_state(&full_path) {
-                if before != after {
-                    if let Err(e) = bnotes.update_note_timestamp(note_path) {
-                        eprintln!("Warning: Failed to update timestamp: {}", e);
-                    }
-                }
-            }
-        }
+    if bnotes.config().auto_update_timestamp
+        && let Some(before) = before_state
+        && let Ok(after) = bnotes::capture_note_state(&full_path)
+        && before != after
+        && let Err(e) = bnotes.update_note_timestamp(note_path)
+    {
+        eprintln!("Warning: Failed to update timestamp: {}", e);
     }
 
     Ok(())
