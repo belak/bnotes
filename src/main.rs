@@ -74,6 +74,7 @@ enum Commands {
     },
 
     /// List open tasks (alias for 'task list --status open')
+    #[command(alias = "t")]
     Tasks {
         /// Filter by note name (supports * wildcard)
         #[arg(long)]
@@ -131,6 +132,7 @@ enum Commands {
     },
 
     /// Weekly note management
+    #[command(alias = "w")]
     Weekly {
         /// Date (YYYY-MM-DD format) or 'prev'/'next'
         date: Option<String>,
