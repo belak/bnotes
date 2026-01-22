@@ -60,8 +60,9 @@ enum Commands {
     },
 
     /// Open a note in the default editor
+    #[command(alias = "e")]
     Edit {
-        /// Note title
+        /// Note title or file path
         title: String,
 
         /// Template to use if creating a new note

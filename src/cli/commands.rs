@@ -229,24 +229,33 @@ pub fn edit(notes_dir: &Path, title: &str, template_name: Option<String>, print_
 
     let relative_path = match matches.len() {
         0 => {
-            if print_path {
-                anyhow::bail!("Note doesn't exist: {}", title);
+            // Try treating it as a file path
+            let potential_path = PathBuf::from(title);
+            let full_path = notes_dir.join(&potential_path);
+
+            if full_path.exists() && full_path.is_file() {
+                // It's a valid file path - use it directly
+                potential_path
+            } else {
+                if print_path {
+                    anyhow::bail!("Note doesn't exist: {}", title);
+                }
+
+                // Note doesn't exist - prompt to create it
+                print!("Note doesn't exist. Create it? [Y/n] ");
+                io::stdout().flush()?;
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                let input = input.trim().to_lowercase();
+
+                if input == "n" || input == "no" {
+                    return Ok(());
+                }
+
+                // Create the note
+                bnotes.create_note(title, template_name.as_deref())?
             }
-
-            // Note doesn't exist - prompt to create it
-            print!("Note doesn't exist. Create it? [Y/n] ");
-            io::stdout().flush()?;
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input)?;
-            let input = input.trim().to_lowercase();
-
-            if input == "n" || input == "no" {
-                return Ok(());
-            }
-
-            // Create the note
-            bnotes.create_note(title, template_name.as_deref())?
         }
         1 => matches[0].path.clone(),
         _ => {
