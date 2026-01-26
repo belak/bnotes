@@ -518,59 +518,57 @@ impl BNotes {
     /// Parse frontmatter from note content
     /// Returns (frontmatter, body_content) where body is everything after frontmatter
     fn parse_frontmatter(&self, content: &str) -> Result<(Option<note::Frontmatter>, String)> {
-        use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
-
-        let mut options = Options::empty();
-        options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
-
-        let parser = Parser::new_ext(content, options);
-        let mut in_metadata = false;
-        let mut yaml_content = String::new();
-        let mut found_metadata = false;
-        let mut body_start = 0;
-
-        // Find the end of frontmatter to determine where body starts
-        let mut current_pos = 0;
-        for event in parser {
-            match event {
-                Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                    in_metadata = true;
-                    found_metadata = true;
-                }
-                Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
-                    in_metadata = false;
-                    // Body starts after frontmatter block
-                    // Find the position after the closing ---
-                    if let Some(pos) = content[current_pos..].find("---\n") {
-                        body_start = current_pos + pos + 4; // Skip past "---\n"
-                    }
-                }
-                Event::Text(text) if in_metadata => {
-                    yaml_content.push_str(&text);
-                }
-                _ => {}
-            }
-            current_pos = content.len();
+        // Simple manual parsing to correctly track frontmatter boundaries
+        if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
+            // No frontmatter
+            return Ok((None, content.to_string()));
         }
 
-        let frontmatter = if found_metadata && !yaml_content.is_empty() {
-            match serde_yaml::from_str::<note::Frontmatter>(&yaml_content) {
+        // Find the closing ---
+        let after_opening = if content.starts_with("---\r\n") { 5 } else { 4 };
+
+        if let Some(pos) = content[after_opening..].find("\n---\n") {
+            let yaml_end = after_opening + pos;
+            let yaml_content = &content[after_opening..yaml_end];
+            let body_start = yaml_end + 5; // Skip past "\n---\n"
+
+            let frontmatter = match serde_yaml::from_str::<note::Frontmatter>(yaml_content) {
                 Ok(fm) => Some(fm),
                 Err(e) => {
                     anyhow::bail!("Failed to parse frontmatter: {}", e);
                 }
-            }
-        } else {
-            None
-        };
+            };
 
-        let body = if body_start > 0 && body_start < content.len() {
-            &content[body_start..]
-        } else {
-            content
-        };
+            let body = if body_start < content.len() {
+                &content[body_start..]
+            } else {
+                ""
+            };
 
-        Ok((frontmatter, body.to_string()))
+            Ok((frontmatter, body.to_string()))
+        } else if let Some(pos) = content[after_opening..].find("\n---\r\n") {
+            let yaml_end = after_opening + pos;
+            let yaml_content = &content[after_opening..yaml_end];
+            let body_start = yaml_end + 6; // Skip past "\n---\r\n"
+
+            let frontmatter = match serde_yaml::from_str::<note::Frontmatter>(yaml_content) {
+                Ok(fm) => Some(fm),
+                Err(e) => {
+                    anyhow::bail!("Failed to parse frontmatter: {}", e);
+                }
+            };
+
+            let body = if body_start < content.len() {
+                &content[body_start..]
+            } else {
+                ""
+            };
+
+            Ok((frontmatter, body.to_string()))
+        } else {
+            // Malformed frontmatter - no closing ---
+            Ok((None, content.to_string()))
+        }
     }
 
     /// Update the 'updated' timestamp in a note's frontmatter
@@ -1172,5 +1170,68 @@ title: B Note
         let (_note_path, migrated_count) = bnotes.create_weekly_with_migration(past_week, None, true).unwrap();
 
         assert_eq!(migrated_count, 0); // No migration for past weeks when prompting
+    }
+
+    #[test]
+    fn test_update_timestamp_no_duplicate_frontmatter() {
+        let storage = Box::new(MemoryStorage::new());
+
+        // Create a note with frontmatter
+        storage.write(Path::new("test.md"), r#"---
+tags: [test]
+created: 2024-01-01T00:00:00Z
+---
+
+# Test Note
+
+Content here.
+"#).unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+
+        // Update timestamp
+        bnotes.update_note_timestamp(Path::new("test.md")).unwrap();
+
+        // Read back and verify no duplicate frontmatter
+        let content = bnotes.repo.storage.read_to_string(Path::new("test.md")).unwrap();
+
+        // Count occurrences of "---"
+        let dash_count = content.matches("---").count();
+        assert_eq!(dash_count, 2, "Should have exactly 2 '---' markers (opening and closing)");
+
+        // Verify no null fields
+        assert!(!content.contains("title: null"), "Should not contain 'title: null'");
+        assert!(!content.contains("title: ~"), "Should not contain 'title: ~'");
+
+        // Verify updated field was added
+        assert!(content.contains("updated:"), "Should contain updated field");
+
+        // Verify tags were preserved
+        assert!(content.contains("tags:"), "Should contain tags field");
+    }
+
+    #[test]
+    fn test_frontmatter_parsing_correctness() {
+        let storage = Box::new(MemoryStorage::new());
+        let bnotes = BNotes::with_defaults(storage);
+
+        let content = r#"---
+tags: [test, example]
+created: 2024-01-01T00:00:00Z
+---
+
+# Test Note
+
+Body content here.
+More content.
+"#;
+
+        let (frontmatter, body) = bnotes.parse_frontmatter(content).unwrap();
+
+        assert!(frontmatter.is_some(), "Should parse frontmatter");
+        let fm = frontmatter.unwrap();
+        assert_eq!(fm.tags, vec!["test", "example"]);
+        assert!(fm.created.is_some());
+        assert_eq!(body.trim(), "# Test Note\n\nBody content here.\nMore content.");
     }
 }

@@ -68,17 +68,24 @@ where
     }
 }
 
+/// Helper function to check if a serde_yaml::Value is empty (null or empty mapping)
+fn is_empty_value(value: &serde_yaml::Value) -> bool {
+    matches!(value, serde_yaml::Value::Null) ||
+    (matches!(value, serde_yaml::Value::Mapping(m) if m.is_empty()))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Frontmatter {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
-    #[serde(default, deserialize_with = "deserialize_tags")]
+    #[serde(default, deserialize_with = "deserialize_tags", skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
-    #[serde(default, deserialize_with = "deserialize_datetime")]
+    #[serde(default, deserialize_with = "deserialize_datetime", skip_serializing_if = "Option::is_none")]
     pub created: Option<DateTime<Utc>>,
-    #[serde(default, deserialize_with = "deserialize_datetime")]
+    #[serde(default, deserialize_with = "deserialize_datetime", skip_serializing_if = "Option::is_none")]
     pub updated: Option<DateTime<Utc>>,
     /// Preserve any unknown fields
-    #[serde(flatten)]
+    #[serde(flatten, skip_serializing_if = "is_empty_value")]
     pub extra: serde_yaml::Value,
 }
 
