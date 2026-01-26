@@ -7,7 +7,7 @@ use super::colors;
 use super::git::GitRepo;
 use super::utils::pluralize;
 use anyhow::{Context, Result};
-use bnotes::{BNotes, RealStorage};
+use bnotes::{BNotes, PeriodType, RealStorage};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -781,13 +781,21 @@ pub fn task_list(
 
         write!(stdout, " ")?;
 
-        // Checkbox - [x] in green, [ ] default
-        if task.completed {
-            stdout.set_color(&colors::success())?;
-            write!(stdout, "[x]")?;
-            stdout.reset()?;
-        } else {
-            write!(stdout, "[ ]")?;
+        // Checkbox - [x] in green, [>] in yellow, [ ] default
+        match task.status {
+            bnotes::note::TaskStatus::Completed => {
+                stdout.set_color(&colors::success())?;
+                write!(stdout, "[x]")?;
+                stdout.reset()?;
+            }
+            bnotes::note::TaskStatus::Migrated => {
+                stdout.set_color(&colors::warning())?;
+                write!(stdout, "[>]")?;
+                stdout.reset()?;
+            }
+            bnotes::note::TaskStatus::Uncompleted => {
+                write!(stdout, "[ ]")?;
+            }
         }
 
         write!(stdout, " ")?;
@@ -923,6 +931,88 @@ fn periodic_open<P: bnotes::PeriodType>(
 
         // Create the note using library
         bnotes.open_periodic(period, template_override.as_deref())?;
+    }
+
+    launch_editor(notes_dir, &note_path, bnotes, print_path)?;
+    Ok(())
+}
+
+/// Specialized handler for weekly note commands with migration support
+pub fn weekly(
+    notes_dir: &Path,
+    action: PeriodicAction,
+    template_override: Option<String>,
+    print_path: bool,
+) -> Result<()> {
+    use bnotes::Weekly;
+
+    validate_notes_dir(notes_dir)?;
+    let storage = Box::new(RealStorage::new(notes_dir.to_path_buf()));
+    let bnotes = BNotes::with_defaults(storage);
+
+    match action {
+        PeriodicAction::Open(date_opt) => {
+            let period = if let Some(date_str) = date_opt {
+                Weekly::from_date_str(&date_str)?
+            } else {
+                Weekly::current()
+            };
+
+            weekly_open(notes_dir, &bnotes, period, template_override, print_path)?;
+        }
+        PeriodicAction::List => {
+            periodic_list::<Weekly>(&bnotes)?;
+        }
+        PeriodicAction::Prev => {
+            let note_path = bnotes.navigate_periodic::<Weekly>("prev", template_override.as_deref())?;
+            launch_editor(notes_dir, &note_path, &bnotes, print_path)?;
+        }
+        PeriodicAction::Next => {
+            let note_path = bnotes.navigate_periodic::<Weekly>("next", template_override.as_deref())?;
+            launch_editor(notes_dir, &note_path, &bnotes, print_path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn weekly_open(
+    notes_dir: &Path,
+    bnotes: &bnotes::BNotes,
+    period: bnotes::Weekly,
+    template_override: Option<String>,
+    print_path: bool,
+) -> Result<()> {
+    let note_path = PathBuf::from(period.filename());
+    let full_path = notes_dir.join(&note_path);
+
+    // If note doesn't exist, prompt to create (and potentially migrate)
+    if !full_path.exists() {
+        if print_path {
+            anyhow::bail!("Note doesn't exist: {}", period.identifier());
+        }
+
+        print!("Week {} doesn't exist. Create it? [Y/n] ", period.identifier());
+        io::stdout().flush()?;
+
+        let mut input = String::new();
+        io::stdin().read_line(&mut input)?;
+        let input = input.trim().to_lowercase();
+
+        if input == "n" || input == "no" {
+            return Ok(());
+        }
+
+        // Create the note with migration support
+        let (_, migrated_count) = bnotes.create_weekly_with_migration(
+            period,
+            template_override.as_deref(),
+            !print_path, // Only prompt for migration if not in print-path mode
+        )?;
+
+        if migrated_count > 0 {
+            println!("Migrated {} tasks from previous week.", migrated_count);
+        }
     }
 
     launch_editor(notes_dir, &note_path, bnotes, print_path)?;

@@ -5,6 +5,8 @@ created: {{datetime}}
 
 # {{title}}
 
+{{migrated_tasks}}
+
 ## Goals
 
 - [ ]

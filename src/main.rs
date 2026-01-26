@@ -307,8 +307,6 @@ fn main() -> Result<()> {
             print_path,
             subcommand,
         } => {
-            use bnotes::Weekly;
-
             let action = if let Some(cmd) = subcommand {
                 match cmd {
                     PeriodicSubcommands::List => cli::PeriodicAction::List,
@@ -325,7 +323,7 @@ fn main() -> Result<()> {
                 cli::PeriodicAction::Open(date)
             };
 
-            cli::commands::periodic::<Weekly>(&notes_dir, action, template, print_path)?;
+            cli::commands::weekly(&notes_dir, action, template, print_path)?;
         }
         Commands::Quarterly {
             date,

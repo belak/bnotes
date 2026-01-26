@@ -220,12 +220,37 @@ impl Note {
 // Task
 // ============================================================================
 
+/// Task status - the checkbox marker in markdown
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskStatus {
+    Uncompleted,   // - [ ]
+    Completed,     // - [x] or [X]
+    Migrated,      // - [>]
+}
+
+impl TaskStatus {
+    /// Parse status from checkbox character
+    fn from_checkbox_char(c: char) -> Option<Self> {
+        match c {
+            ' ' => Some(TaskStatus::Uncompleted),
+            'x' | 'X' => Some(TaskStatus::Completed),
+            '>' => Some(TaskStatus::Migrated),
+            _ => None,
+        }
+    }
+
+    /// Check if this status represents an incomplete task
+    pub fn is_incomplete(&self) -> bool {
+        matches!(self, TaskStatus::Uncompleted)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Task {
     pub note_path: PathBuf,
     pub note_title: String,
     pub index: usize, // 1-based index within the note
-    pub completed: bool,
+    pub status: TaskStatus,
     pub text: String,
     pub priority: Option<String>,
     pub urgency: Option<String>,  // !!!, !!, !
@@ -311,51 +336,93 @@ impl Task {
         let mut tasks = Vec::new();
         let mut task_index = 0;
 
-        // Parse the markdown to find task list items
-        let mut options = Options::empty();
-        options.insert(Options::ENABLE_TASKLISTS);
+        // Parse the markdown to find list items (don't use ENABLE_TASKLISTS so we get raw text)
+        let options = Options::empty();
         let parser = Parser::new_ext(&note.content, options);
-        let mut in_task_item = false;
-        let mut task_text = String::new();
-        let mut is_checked = false;
+        let mut in_list_item = false;
+        let mut item_text = String::new();
 
         for event in parser {
             match event {
                 Event::Start(Tag::Item) => {
-                    in_task_item = false;
-                    task_text.clear();
+                    in_list_item = true;
+                    item_text.clear();
                 }
-                Event::TaskListMarker(checked) => {
-                    in_task_item = true;
-                    is_checked = checked;
+                Event::Text(text) if in_list_item => {
+                    item_text.push_str(&text);
                 }
-                Event::Text(text) if in_task_item => {
-                    task_text.push_str(&text);
-                }
-                Event::End(TagEnd::Item) if in_task_item => {
-                    task_index += 1;
+                Event::End(TagEnd::Item) if in_list_item => {
+                    // Check if this list item is a task (starts with [X])
+                    let trimmed = item_text.trim();
+                    if let Some(rest) = trimmed.strip_prefix('[') {
+                        if let Some(close_bracket) = rest.find(']') {
+                            if close_bracket == 1 {
+                                // We have a checkbox: [X]
+                                let checkbox_char = rest.chars().next().unwrap();
+                                if let Some(status) = TaskStatus::from_checkbox_char(checkbox_char) {
+                                    task_index += 1;
+                                    let task_text = rest[close_bracket + 1..].trim();
 
-                    let (urgency, priority, rest) = Self::parse_urgency_and_priority(&task_text);
-                    let (tags, text) = Self::parse_tags(&rest);
+                                    let (urgency, priority, rest) = Self::parse_urgency_and_priority(task_text);
+                                    let (tags, text) = Self::parse_tags(&rest);
 
-                    tasks.push(Task {
-                        note_path: note.path.clone(),
-                        note_title: note.title.clone(),
-                        index: task_index,
-                        completed: is_checked,
-                        text,
-                        priority,
-                        urgency,
-                        tags,
-                    });
+                                    tasks.push(Task {
+                                        note_path: note.path.clone(),
+                                        note_title: note.title.clone(),
+                                        index: task_index,
+                                        status,
+                                        text,
+                                        priority,
+                                        urgency,
+                                        tags,
+                                    });
+                                }
+                            }
+                        }
+                    }
 
-                    in_task_item = false;
+                    in_list_item = false;
                 }
                 _ => {}
             }
         }
 
         tasks
+    }
+
+    /// Reconstruct a markdown task line from this Task
+    pub fn to_markdown_line(&self) -> String {
+        let mut line = String::from("- [ ] ");
+
+        // Add urgency
+        if let Some(urgency) = &self.urgency {
+            line.push_str(urgency);
+            line.push(' ');
+        }
+
+        // Add priority
+        if let Some(priority) = &self.priority {
+            line.push('(');
+            line.push_str(priority);
+            line.push_str(") ");
+        }
+
+        // Add task text
+        line.push_str(&self.text);
+
+        // Add tags
+        if !self.tags.is_empty() {
+            line.push(' ');
+            for tag in &self.tags {
+                line.push('@');
+                line.push_str(tag);
+                line.push(' ');
+            }
+            // Remove trailing space
+            line.pop();
+        }
+
+        line
     }
 }
 
@@ -377,14 +444,26 @@ pub(crate) fn extract_tasks_from_notes(notes: &[Note]) -> Vec<Task> {
 
 /// Render a template by replacing placeholders
 pub(crate) fn render_template(template_content: &str, title: &str) -> String {
+    render_template_with_tasks(template_content, title, None)
+}
+
+/// Render a template with optional migrated tasks section
+pub(crate) fn render_template_with_tasks(
+    template_content: &str,
+    title: &str,
+    migrated_tasks: Option<&str>,
+) -> String {
     let now = Utc::now();
     let date = now.format("%Y-%m-%d").to_string();
     let datetime = now.to_rfc3339();
+
+    let migrated_section = migrated_tasks.unwrap_or("");
 
     template_content
         .replace("{{title}}", title)
         .replace("{{date}}", &date)
         .replace("{{datetime}}", &datetime)
+        .replace("{{migrated_tasks}}", migrated_section)
 }
 
 // ============================================================================
@@ -418,13 +497,13 @@ More text.
 
         assert_eq!(tasks.len(), 3);
         assert_eq!(tasks[0].text, "First task");
-        assert!(!tasks[0].completed);
+        assert_eq!(tasks[0].status, TaskStatus::Uncompleted);
         assert_eq!(tasks[0].priority, None);
         assert_eq!(tasks[1].text, "Completed task");
-        assert!(tasks[1].completed);
+        assert_eq!(tasks[1].status, TaskStatus::Completed);
         assert_eq!(tasks[1].priority, None);
         assert_eq!(tasks[2].text, "Another task");
-        assert!(!tasks[2].completed);
+        assert_eq!(tasks[2].status, TaskStatus::Uncompleted);
         assert_eq!(tasks[2].priority, None);
     }
 
@@ -462,10 +541,86 @@ tags: [test]
 
         assert_eq!(tasks[3].priority, Some("A".to_string()));
         assert_eq!(tasks[3].text, "Completed high priority");
-        assert!(tasks[3].completed);
+        assert_eq!(tasks[3].status, TaskStatus::Completed);
 
         assert_eq!(tasks[4].priority, Some("C".to_string()));
         assert_eq!(tasks[4].text, "Low priority task");
+    }
+
+    #[test]
+    fn test_extract_migrated_tasks() {
+        let content = r#"---
+tags: [test]
+---
+
+# My Note
+
+## Tasks
+- [ ] Uncompleted task
+- [x] Completed task
+- [>] Migrated task
+- [>] !!! (A) Migrated with priority and urgency @backend
+
+"#;
+
+        let note = Note::parse(Path::new("test.md"), content).unwrap();
+        let tasks = Task::extract_from_note(&note);
+
+        assert_eq!(tasks.len(), 4);
+
+        assert_eq!(tasks[0].status, TaskStatus::Uncompleted);
+        assert_eq!(tasks[0].text, "Uncompleted task");
+
+        assert_eq!(tasks[1].status, TaskStatus::Completed);
+        assert_eq!(tasks[1].text, "Completed task");
+
+        assert_eq!(tasks[2].status, TaskStatus::Migrated);
+        assert_eq!(tasks[2].text, "Migrated task");
+
+        assert_eq!(tasks[3].status, TaskStatus::Migrated);
+        assert_eq!(tasks[3].text, "Migrated with priority and urgency");
+        assert_eq!(tasks[3].priority, Some("A".to_string()));
+        assert_eq!(tasks[3].urgency, Some("!!!".to_string()));
+        assert_eq!(tasks[3].tags, vec!["backend"]);
+    }
+
+    #[test]
+    fn test_reconstruct_task_line() {
+        let task = Task {
+            note_path: PathBuf::from("test.md"),
+            note_title: "Test".to_string(),
+            index: 1,
+            status: TaskStatus::Uncompleted,
+            text: "Simple task".to_string(),
+            priority: None,
+            urgency: None,
+            tags: vec![],
+        };
+        assert_eq!(task.to_markdown_line(), "- [ ] Simple task");
+
+        let task_with_priority = Task {
+            note_path: PathBuf::from("test.md"),
+            note_title: "Test".to_string(),
+            index: 1,
+            status: TaskStatus::Uncompleted,
+            text: "High priority task".to_string(),
+            priority: Some("A".to_string()),
+            urgency: None,
+            tags: vec![],
+        };
+        assert_eq!(task_with_priority.to_markdown_line(), "- [ ] (A) High priority task");
+
+        let task_with_all = Task {
+            note_path: PathBuf::from("test.md"),
+            note_title: "Test".to_string(),
+            index: 1,
+            status: TaskStatus::Uncompleted,
+            text: "Complete task".to_string(),
+            priority: Some("B".to_string()),
+            urgency: Some("!!!".to_string()),
+            tags: vec!["backend".to_string(), "urgent".to_string()],
+        };
+        assert_eq!(task_with_all.to_markdown_line(), "- [ ] !!! (B) Complete task @backend @urgent");
     }
 
     #[test]

@@ -38,3 +38,23 @@ Templates support these variables:
 - `{{title}}` - Note title
 - `{{date}}` - Current date (YYYY-MM-DD)
 - `{{datetime}}` - Current datetime (ISO 8601)
+- `{{migrated_tasks}}` - Migrated tasks from previous period (weekly notes only)
+
+### Task Migration (Weekly Notes)
+
+When creating a new weekly note for the current week, bnotes will prompt to migrate uncompleted tasks from the most recent previous weekly note. Use the `{{migrated_tasks}}` variable in your weekly template to control where migrated tasks appear:
+
+```markdown
+---
+tags: [weekly]
+created: {{datetime}}
+---
+
+# {{title}}
+
+{{migrated_tasks}}
+
+## Goals
+```
+
+If you don't include `{{migrated_tasks}}`, the variable will be replaced with an empty string and no tasks will be inserted. Tasks in the previous note will be marked with `[>]` to indicate they've been migrated.

@@ -200,7 +200,7 @@ impl BNotes {
 
     /// List all tasks, optionally filtered by tags and status
     ///
-    /// Status can be Some("open"), Some("done"), or None for all tasks
+    /// Status can be Some("open"), Some("completed"), Some("migrated"), Some("all"), or None for all tasks
     pub fn list_tasks(&self, tags: &[String], status: Option<&str>, sort_order: TaskSortOrder) -> Result<Vec<note::Task>> {
         // Get notes, optionally filtered by tags
         let notes = if tags.is_empty() {
@@ -214,20 +214,17 @@ impl BNotes {
 
         // Filter by status if specified
         if let Some(status_filter) = status {
-            let filter_open = status_filter.eq_ignore_ascii_case("open");
-            let filter_done = status_filter.eq_ignore_ascii_case("done");
-
-            if !filter_open && !filter_done {
-                anyhow::bail!("Invalid status filter: {}. Use 'open' or 'done'.", status_filter);
+            if status_filter.eq_ignore_ascii_case("all") {
+                // No filtering
+            } else if status_filter.eq_ignore_ascii_case("open") {
+                tasks.retain(|task| task.status == note::TaskStatus::Uncompleted);
+            } else if status_filter.eq_ignore_ascii_case("completed") || status_filter.eq_ignore_ascii_case("done") {
+                tasks.retain(|task| task.status == note::TaskStatus::Completed);
+            } else if status_filter.eq_ignore_ascii_case("migrated") {
+                tasks.retain(|task| task.status == note::TaskStatus::Migrated);
+            } else {
+                anyhow::bail!("Invalid status filter: {}. Use 'open', 'completed', 'migrated', or 'all'.", status_filter);
             }
-
-            tasks.retain(|task| {
-                if filter_open {
-                    !task.completed
-                } else {
-                    task.completed
-                }
-            });
         }
 
         // Sort based on provided sort order
@@ -345,6 +342,168 @@ impl BNotes {
         };
 
         self.open_periodic(period, template_name)
+    }
+
+    /// Find the most recent weekly note before the given period
+    fn find_previous_weekly_note(&self, period: periodic::Weekly) -> Option<PathBuf> {
+        let mut current = period.prev();
+
+        // Search backwards for up to 52 weeks (one year)
+        for _ in 0..52 {
+            let filename = current.filename();
+            let note_path = Path::new(&filename);
+
+            if self.repo.storage.exists(note_path) {
+                return Some(note_path.to_path_buf());
+            }
+
+            current = current.prev();
+        }
+
+        None
+    }
+
+    /// Mark all uncompleted tasks as migrated in a note
+    fn mark_tasks_migrated(&self, note_path: &Path) -> Result<()> {
+        let content = self.repo.storage.read_to_string(note_path)?;
+        let updated_content = content.replace("- [ ]", "- [>]");
+        self.repo.storage.write(note_path, &updated_content)?;
+        Ok(())
+    }
+
+    /// Build the migrated tasks section from a list of tasks
+    /// Returns just the task list without heading (heading should be in template)
+    fn build_migrated_section(tasks: &[note::Task]) -> String {
+        tasks
+            .iter()
+            .map(|task| task.to_markdown_line())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Create a weekly note with optional task migration from the previous week
+    ///
+    /// If the weekly note is for the current week and doesn't exist yet, prompts
+    /// to migrate uncompleted tasks from the most recent previous weekly note.
+    ///
+    /// Returns (note_path, migrated_count) where migrated_count is the number of tasks migrated
+    pub fn create_weekly_with_migration(
+        &self,
+        period: periodic::Weekly,
+        template_name: Option<&str>,
+        should_prompt: bool,
+    ) -> Result<(PathBuf, usize)> {
+        use std::io::{self, Write};
+
+        let filename = period.filename();
+        let note_path = PathBuf::from(filename);
+
+        // If note already exists, just return it
+        if self.repo.storage.exists(&note_path) {
+            return Ok((note_path, 0));
+        }
+
+        // Check if this is the current week or if we're in non-interactive mode (testing)
+        let is_current_week = period == periodic::Weekly::current();
+        let should_migrate_check = is_current_week || !should_prompt;
+
+        // Find previous weekly note and extract uncompleted tasks
+        let (previous_note, uncompleted_tasks) = if should_migrate_check {
+            if let Some(prev_path) = self.find_previous_weekly_note(period) {
+                // Read and parse the previous note
+                let content = self.repo.storage.read_to_string(&prev_path)?;
+                let prev_note = note::Note::parse(&prev_path, &content)?;
+                let all_tasks = note::Task::extract_from_note(&prev_note);
+                let uncompleted: Vec<_> = all_tasks
+                    .into_iter()
+                    .filter(|t| t.status == note::TaskStatus::Uncompleted)
+                    .collect();
+
+                (Some(prev_path), uncompleted)
+            } else {
+                (None, Vec::new())
+            }
+        } else {
+            (None, Vec::new())
+        };
+
+        // Prompt for migration if needed
+        let should_migrate = if should_prompt && !uncompleted_tasks.is_empty() {
+            if let Some(ref prev_path) = previous_note {
+                let prev_identifier = prev_path.file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("previous week");
+
+                print!("Found {} uncompleted tasks from {}. Migrate to {}? [Y/n] ",
+                    uncompleted_tasks.len(), prev_identifier, period.identifier());
+                io::stdout().flush()?;
+
+                let mut input = String::new();
+                io::stdin().read_line(&mut input)?;
+                let input = input.trim().to_lowercase();
+
+                input.is_empty() || input == "y" || input == "yes"
+            } else {
+                false
+            }
+        } else {
+            !uncompleted_tasks.is_empty()
+        };
+
+        // Create note content
+        let title = period.identifier();
+        let template_path = if let Some(name) = template_name {
+            name.to_string()
+        } else {
+            self.config.periodic.weekly_template.clone()
+        };
+
+        let template_dir = self.config.template_dir_path();
+        let full_template_path = template_dir.join(&template_path);
+
+        // Build migrated tasks section if migrating
+        let (content, migrated_count) = if should_migrate {
+            let migrated_section = Self::build_migrated_section(&uncompleted_tasks);
+            let count = uncompleted_tasks.len();
+
+            let content = if self.repo.storage.exists(&full_template_path) {
+                let template_content = self.repo.storage.read_to_string(&full_template_path)?;
+                note::render_template_with_tasks(&template_content, &title, Some(&migrated_section))
+            } else {
+                // Use embedded default template
+                let embedded = templates::get_embedded_template(periodic::Weekly::template_name())
+                    .unwrap_or("# {{title}}\n\n")
+                    .to_string();
+                note::render_template_with_tasks(&embedded, &title, Some(&migrated_section))
+            };
+
+            (content, count)
+        } else {
+            let content = if self.repo.storage.exists(&full_template_path) {
+                let template_content = self.repo.storage.read_to_string(&full_template_path)?;
+                note::render_template(&template_content, &title)
+            } else {
+                // Use embedded default template
+                let embedded = templates::get_embedded_template(periodic::Weekly::template_name())
+                    .unwrap_or("# {{title}}\n\n")
+                    .to_string();
+                note::render_template(&embedded, &title)
+            };
+
+            (content, 0)
+        };
+
+        // Mark tasks as migrated in the previous note if migration happened
+        if migrated_count > 0 {
+            if let Some(prev_path) = previous_note {
+                self.mark_tasks_migrated(&prev_path)?;
+            }
+        }
+
+        // Write the new note
+        self.repo.storage.write(&note_path, &content)?;
+
+        Ok((note_path, migrated_count))
     }
 
     /// Run health checks on the note collection
@@ -896,5 +1055,122 @@ title: B Note
         assert_eq!(tasks[0].priority, Some("A".to_string()));
         assert_eq!(tasks[1].priority, Some("B".to_string()));
         assert_eq!(tasks[2].priority, Some("C".to_string()));
+    }
+
+    #[test]
+    fn test_weekly_migration_full_flow() {
+        use periodic::Weekly;
+
+        let storage = Box::new(MemoryStorage::new());
+
+        // Create a previous weekly note with uncompleted tasks
+        storage.write(Path::new("2026-W03.md"), r#"# 2026-W03
+
+## Tasks
+- [x] Completed task
+- [ ] Uncompleted task 1
+- [ ] !!! (A) Urgent and important task @backend
+- [ ] Regular task @frontend
+- [>] Already migrated task
+"#).unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+
+        // Create week 4 with migration (without prompting)
+        let week4 = Weekly::from_date_str("2026-W04").unwrap();
+        let (note_path, migrated_count) = bnotes.create_weekly_with_migration(week4, None, false).unwrap();
+
+        assert_eq!(note_path, PathBuf::from("2026-W04.md"));
+        assert_eq!(migrated_count, 3); // Only uncompleted tasks
+
+        // Check the new note has migrated tasks
+        let content = bnotes.repo.storage.read_to_string(&note_path).unwrap();
+        assert!(content.contains("- [ ] Uncompleted task 1"));
+        assert!(content.contains("- [ ] !!! (A) Urgent and important task @backend"));
+        assert!(content.contains("- [ ] Regular task @frontend"));
+        assert!(!content.contains("Completed task")); // Completed tasks not migrated
+        assert!(!content.contains("Already migrated task")); // Already migrated tasks not re-migrated
+
+        // Check the old note has tasks marked as migrated
+        let old_content = bnotes.repo.storage.read_to_string(Path::new("2026-W03.md")).unwrap();
+        assert!(old_content.contains("- [x] Completed task")); // Completed task unchanged
+        assert!(old_content.contains("- [>] Uncompleted task 1")); // Now migrated
+        assert!(old_content.contains("- [>] !!! (A) Urgent and important task @backend"));
+        assert!(old_content.contains("- [>] Regular task @frontend"));
+        assert!(old_content.contains("- [>] Already migrated task")); // Was already migrated, still marked
+    }
+
+    #[test]
+    fn test_weekly_migration_no_previous_note() {
+        use periodic::{PeriodType, Weekly};
+
+        let storage = Box::new(MemoryStorage::new());
+        let bnotes = BNotes::with_defaults(storage);
+
+        // Create week 4 without any previous weekly notes
+        let week4 = Weekly::from_date_str("2026-W04").unwrap();
+        let (note_path, migrated_count) = bnotes.create_weekly_with_migration(week4, None, false).unwrap();
+
+        assert_eq!(note_path, PathBuf::from("2026-W04.md"));
+        assert_eq!(migrated_count, 0); // No tasks to migrate
+
+        // Check the new note exists and contains the template content
+        let content = bnotes.repo.storage.read_to_string(&note_path).unwrap();
+        assert!(content.contains("# 2026-W04"));
+        assert!(content.contains("## Goals"));
+    }
+
+    #[test]
+    fn test_weekly_migration_with_gap() {
+        use periodic::Weekly;
+
+        let storage = Box::new(MemoryStorage::new());
+
+        // Create week 2 with tasks (skip week 3)
+        storage.write(Path::new("2026-W02.md"), r#"# 2026-W02
+
+## Tasks
+- [ ] Old task from week 2
+"#).unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+
+        // Create week 4, should find week 2 as the previous note
+        let week4 = Weekly::from_date_str("2026-W04").unwrap();
+        let (note_path, migrated_count) = bnotes.create_weekly_with_migration(week4, None, false).unwrap();
+
+        assert_eq!(note_path, PathBuf::from("2026-W04.md"));
+        assert_eq!(migrated_count, 1);
+
+        // Check the new note has tasks from week 2
+        let content = bnotes.repo.storage.read_to_string(&note_path).unwrap();
+        assert!(content.contains("- [ ] Old task from week 2"));
+
+        // Check week 2 has tasks marked as migrated
+        let week2_content = bnotes.repo.storage.read_to_string(Path::new("2026-W02.md")).unwrap();
+        assert!(week2_content.contains("- [>] Old task from week 2"));
+    }
+
+    #[test]
+    fn test_weekly_no_migration_for_past_weeks() {
+        use chrono::NaiveDate;
+        use periodic::Weekly;
+
+        let storage = Box::new(MemoryStorage::new());
+
+        // Create a note in the past
+        storage.write(Path::new("2025-W01.md"), r#"# 2025-W01
+
+- [ ] Old task
+"#).unwrap();
+
+        let bnotes = BNotes::with_defaults(storage);
+
+        // Create a past weekly note (not current week) with should_prompt=true
+        // This means migration should not happen for non-current weeks
+        let past_week = Weekly::from_date(NaiveDate::from_ymd_opt(2025, 1, 13).unwrap());
+        let (_note_path, migrated_count) = bnotes.create_weekly_with_migration(past_week, None, true).unwrap();
+
+        assert_eq!(migrated_count, 0); // No migration for past weeks when prompting
     }
 }
