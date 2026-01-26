@@ -518,57 +518,75 @@ impl BNotes {
     /// Parse frontmatter from note content
     /// Returns (frontmatter, body_content) where body is everything after frontmatter
     fn parse_frontmatter(&self, content: &str) -> Result<(Option<note::Frontmatter>, String)> {
-        // Simple manual parsing to correctly track frontmatter boundaries
-        if !content.starts_with("---\n") && !content.starts_with("---\r\n") {
-            // No frontmatter
-            return Ok((None, content.to_string()));
+        use pulldown_cmark::{Event, MetadataBlockKind, Options, Parser, Tag, TagEnd};
+
+        let mut options = Options::empty();
+        options.insert(Options::ENABLE_YAML_STYLE_METADATA_BLOCKS);
+
+        let parser = Parser::new_ext(content, options);
+        let mut in_metadata = false;
+        let mut yaml_content = String::new();
+        let mut found_metadata = false;
+
+        for event in parser {
+            match event {
+                Event::Start(Tag::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
+                    in_metadata = true;
+                    found_metadata = true;
+                }
+                Event::End(TagEnd::MetadataBlock(MetadataBlockKind::YamlStyle)) => {
+                    in_metadata = false;
+                }
+                Event::Text(text) if in_metadata => {
+                    yaml_content.push_str(&text);
+                }
+                _ => {}
+            }
         }
 
-        // Find the closing ---
-        let after_opening = if content.starts_with("---\r\n") { 5 } else { 4 };
-
-        if let Some(pos) = content[after_opening..].find("\n---\n") {
-            let yaml_end = after_opening + pos;
-            let yaml_content = &content[after_opening..yaml_end];
-            let body_start = yaml_end + 5; // Skip past "\n---\n"
-
-            let frontmatter = match serde_yaml::from_str::<note::Frontmatter>(yaml_content) {
+        let frontmatter = if found_metadata && !yaml_content.is_empty() {
+            match serde_yaml::from_str::<note::Frontmatter>(&yaml_content) {
                 Ok(fm) => Some(fm),
                 Err(e) => {
                     anyhow::bail!("Failed to parse frontmatter: {}", e);
                 }
-            };
-
-            let body = if body_start < content.len() {
-                &content[body_start..]
-            } else {
-                ""
-            };
-
-            Ok((frontmatter, body.to_string()))
-        } else if let Some(pos) = content[after_opening..].find("\n---\r\n") {
-            let yaml_end = after_opening + pos;
-            let yaml_content = &content[after_opening..yaml_end];
-            let body_start = yaml_end + 6; // Skip past "\n---\r\n"
-
-            let frontmatter = match serde_yaml::from_str::<note::Frontmatter>(yaml_content) {
-                Ok(fm) => Some(fm),
-                Err(e) => {
-                    anyhow::bail!("Failed to parse frontmatter: {}", e);
-                }
-            };
-
-            let body = if body_start < content.len() {
-                &content[body_start..]
-            } else {
-                ""
-            };
-
-            Ok((frontmatter, body.to_string()))
+            }
         } else {
-            // Malformed frontmatter - no closing ---
-            Ok((None, content.to_string()))
-        }
+            None
+        };
+
+        // Now find where the body starts by locating the closing ---
+        let body = if found_metadata {
+            // Find the frontmatter boundaries manually to correctly extract body
+            if content.starts_with("---\n") || content.starts_with("---\r\n") {
+                let after_opening = if content.starts_with("---\r\n") { 5 } else { 4 };
+
+                // Find closing ---
+                if let Some(pos) = content[after_opening..].find("\n---\n") {
+                    let body_start = after_opening + pos + 5; // Skip past "\n---\n"
+                    if body_start < content.len() {
+                        &content[body_start..]
+                    } else {
+                        ""
+                    }
+                } else if let Some(pos) = content[after_opening..].find("\n---\r\n") {
+                    let body_start = after_opening + pos + 6; // Skip past "\n---\r\n"
+                    if body_start < content.len() {
+                        &content[body_start..]
+                    } else {
+                        ""
+                    }
+                } else {
+                    content // Malformed, return everything
+                }
+            } else {
+                content
+            }
+        } else {
+            content
+        };
+
+        Ok((frontmatter, body.to_string()))
     }
 
     /// Update the 'updated' timestamp in a note's frontmatter
